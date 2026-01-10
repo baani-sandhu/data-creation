@@ -1,0 +1,44 @@
+services:
+  frontend:
+    container_name: nsai_frontend
+    build:
+      context: ./frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /src/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    command: npm start
+
+  backend:
+    container_name: nsai_backend
+    build: 
+      context: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL= mongodb://mongo:27017/nsai
+      - REDIS_URL=redis://redis:6379
+    command: uvicorn app.main:app --reload
+  mongo:
+    container_name: nsai-mongo
+    image: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+  
+  redis:
+    container_name: nsai-redis
+    image: redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  mongo-data:
