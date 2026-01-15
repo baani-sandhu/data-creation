@@ -1,6 +1,8 @@
-import { Navigate, BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
 import Layout from "./components/Layout/Layout";
+import PrivateRoute from "./components/PrivateRoute";
+import { AuthProvider } from "./contexts/authContext";
 
 const Login = lazy(() => import("./pages/Login"));
 const Register = lazy(() => import("./pages/Register"));
@@ -12,24 +14,33 @@ const Training = lazy(() => import("./pages/Training"));
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Suspense fallback={<div className="p-6">Loading...</div>}>
-        <Routes>
-          {/* Public Routes for anyone visiting the app*/}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+    <AuthProvider>
+      <BrowserRouter>
+        <Suspense fallback={<div className="p-6">Loading...</div>}>
+          <Routes>
+            {/* Public routes, un-authenticated users will be redirected to these routes after getting authcontext*/}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
 
-          {/* Protected Routes visible to authenticated user only */}
-          <Route element={<Layout />}>
-            <Route path="*" element={<Navigate to="/dashboard" />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/datasets" element={<Datasets />} />
-            <Route path="/models" element={<Models />} />
-            <Route path="/training" element={<Training />} />
-          </Route>
-        </Routes>
-      </Suspense>
-    </BrowserRouter>
+            {/* Protected routes, only authenticated users will access them, if someone tries to access it via /*,
+            they will be routed to login and register */}
+            <Route
+              element={
+                <PrivateRoute>
+                  <Layout />
+                </PrivateRoute>
+              }
+            >
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/datasets" element={<Datasets />} />
+              <Route path="/models" element={<Models />} />
+              <Route path="/training" element={<Training />} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
