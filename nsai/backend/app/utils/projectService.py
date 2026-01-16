@@ -40,13 +40,12 @@ async def create_new_project(user_id: str, data: ProjectCreate) -> Dict[str, Any
 
 async def get_all_user_projects(user_id: str, page: int = 1, limit: int = 10):
     """Retrieves all projects for the logged-in user."""
-
     skip_count = (page - 1) * limit
 
-    projects = await projects_collection.find({"user_id": user_id}).skip(skip_count).limit(limit).to_list(length=limit)
+    projects = await projects_collection.find({"user_id": ObjectId(user_id)}).skip(skip_count).limit(limit).to_list(length=limit)
+    total_count = await projects_collection.count_documents({"user_id": ObjectId(user_id)})
 
-    total_count = await projects_collection.count_documents({"user_id": user_id})
-
+    # Convert ObjectId fields to strings Because fastAPI / Pydantic cannot handle ObjectId directly
     for project in projects:
         project["_id"] = str(project["_id"])
 

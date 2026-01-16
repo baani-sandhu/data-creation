@@ -22,7 +22,7 @@ async def list_projects(page: int = 1, limit: int = 10, current_user = Depends(g
     """
     Retrieve all projects managed by the authenticated user.
     """
-    projects = await get_all_user_projects(current_user["_id"], page=page, limit=limit)
+    projects = await get_all_user_projects(current_user["user_id"], page=page, limit=limit)
     return projects
 
 @router.get("/{project_id}", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
@@ -30,14 +30,14 @@ async def get_project(project_id: str, current_user = Depends(get_current_user))
     """
     Fetch specific project details including metrics and status.
     """
-    return await get_project_by_id(current_user["_id"], project_id)
+    return await get_project_by_id(current_user["user_id"], project_id)
 
 @router.patch("/{project_id}", status_code=status.HTTP_200_OK)
 async def update_project(project_id: str, data: ProjectUpdate, current_user = Depends(get_current_user)):
     """
     Update project metadata, status, or training configurations.
     """
-    return await update_project_by_id(current_user["_id"], project_id, data)
+    return await update_project_by_id(current_user["user_id"], project_id, data)
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(project_id: str, current_user = Depends(get_current_user)):
