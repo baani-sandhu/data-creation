@@ -12,4 +12,7 @@ class User(BaseModel):
     role: str
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
+    managed_by: str
+    linked_users: List[str] = []
 
+    

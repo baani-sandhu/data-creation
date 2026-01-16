@@ -51,7 +51,7 @@ async def register_user(data, creator_id:str):
 
 
 async def login_user(data):
-    user=await superadmin_collection.find_one({email:data.email})
+    user=await superadmin_collection.find_one({"email":data.email})
     target_collection= superadmin_collection
 
     if not user:

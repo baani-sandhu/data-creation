@@ -9,8 +9,7 @@ class Admin(BaseModel):
     password_hash: str
     first_name: str
     last_name: str
-    role: str # super or admin
-    linked_users: List[str] = [] # Users managed by this particular admin
+    role: str = "super"
     managed_admins: List[str] = [] # Admins managed by this superadmin
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
