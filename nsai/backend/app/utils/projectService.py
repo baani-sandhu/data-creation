@@ -3,10 +3,10 @@ from datetime import datetime
 from fastapi import HTTPException 
 from typing import Dict, Any
 from pymongo.errors import DuplicateKeyError
+from datetime import datetime
 
 from app.routes.schemas.projectSchema import ProjectCreate, ProjectUpdate
 from app.config.db import projects_collection
-from datetime import datetime
 
 async def create_new_project(user_id: str, data: ProjectCreate) -> Dict[str, Any]:
     """Todo: Implement the
@@ -38,19 +38,23 @@ async def create_new_project(user_id: str, data: ProjectCreate) -> Dict[str, Any
         )
     
 
-async def get_all_user_projects(user_id: str, page: int = 1, limit: int = 10):
+async def  get_all_user_projects(user_id: str, page: int = 1, limit: int = 10):
     """Retrieves all projects for the logged-in user."""
     skip_count = (page - 1) * limit
 
     projects = await projects_collection.find({"user_id": ObjectId(user_id)}).skip(skip_count).limit(limit).to_list(length=limit)
+
     total_count = await projects_collection.count_documents({"user_id": ObjectId(user_id)})
 
     # Convert ObjectId fields to strings Because fastAPI / Pydantic cannot handle ObjectId directly
+    cleaned_projects = []
     for project in projects:
         project["_id"] = str(project["_id"])
+        project["user_id"] = str(project["user_id"])
+        cleaned_projects.append(project)
 
     return {
-        "projects": projects,
+        "projects": cleaned_projects,
         "total": total_count,
         "page": page,
         "limit": limit
@@ -60,6 +64,7 @@ async def get_all_user_projects(user_id: str, page: int = 1, limit: int = 10):
 
 async def get_project_by_id(user_id: str, project_id: str):
     """Fetches a single project with ownership validation."""
+    print("Fetching project with ID:", project_id)
     if not ObjectId.is_valid(project_id):
         raise HTTPException(status_code=400, detail="Invalid project ID format.")
     
@@ -67,11 +72,17 @@ async def get_project_by_id(user_id: str, project_id: str):
         "_id": ObjectId(project_id),
         "user_id": ObjectId(user_id) 
     })
-
+    print("Fetched project:", project)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
     
+    # Convert ObjectId to string for response
     project["_id"] = str(project["_id"])
+
+    # Convert user_id to string for consistency
+    if "user_id" in project:
+        project["user_id"] = str(project["user_id"])
+
     return project
 
 
@@ -87,7 +98,7 @@ async def update_project_by_id(user_id: str, project_id: str, data: ProjectUpdat
 
     # Tell the database to update ONLY those specific pieces
     result = await projects_collection.find_one_and_update(
-        {"_id": ObjectId(project_id), "user_id": user_id},
+        {"_id": ObjectId(project_id), "user_id": ObjectId(user_id)},
         {"$set": update_data},
         return_document=True
     )
@@ -95,8 +106,11 @@ async def update_project_by_id(user_id: str, project_id: str, data: ProjectUpdat
     if not result:
         raise HTTPException(status_code=404, detail="Project not found or unauthorized user.")
     
-
+    # Convert ObjectId to string for response
     result["_id"] = str(result["_id"])
+    if "user_id" in result:
+        result["user_id"] = str(result["user_id"])
+    
     return result
 
 
@@ -106,11 +120,10 @@ async def delete_project_by_id(user_id: str, project_id: str):
     
     result = await projects_collection.delete_one({
         "_id": ObjectId(project_id),
-        "user_id": user_id
+        "user_id": ObjectId(user_id)
     })
 
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Project not found or unauthorized user.")
     
-
-    return {"message": "Project deleted successfully"}
+    return None

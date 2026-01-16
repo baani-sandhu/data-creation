@@ -39,9 +39,11 @@ async def update_project(project_id: str, data: ProjectUpdate, current_user = De
     """
     return await update_project_by_id(current_user["user_id"], project_id, data)
 
-@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{project_id}", status_code=status.HTTP_200_OK)
 async def delete_project(project_id: str, current_user = Depends(get_current_user)):
     """
     Remove the project from the MongoDB collection.
     """
-    return await delete_project_by_id(current_user["_id"], project_id)
+    await delete_project_by_id(current_user["user_id"], project_id)
+    return  {"message": "Project removed Successfully"}
+    
