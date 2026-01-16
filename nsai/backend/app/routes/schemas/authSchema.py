@@ -6,8 +6,12 @@ class RegisterRequest(BaseModel):
     password: str
     first_name: str
     last_name: str
-    role: str
+    role: str #user or admin
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+class TokenData(BaseModel):
+    user_id: str
+    role: str

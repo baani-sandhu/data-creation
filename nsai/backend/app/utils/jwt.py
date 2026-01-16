@@ -12,10 +12,11 @@ def create_access_token(user_id: str, email: str, role: str):
     }
     return jwt.encode(payload, settings.JWT_PRIVATE_KEY, algorithm=settings.JWT_ALGORITHM)
 
-def create_refresh_token(user_id: str):
+def create_refresh_token(user_id: str, role:str):
     payload = {
         "user_id": user_id,
         "token_id": str(uuid4()),
+        "role": role,
         "exp": datetime.now() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
         "type": "refresh"
     }

@@ -8,13 +8,6 @@ from app.routes.schemas.tokenSchema import RefreshTokenRequest
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
-@router.post("/register")
-async def register(data: RegisterRequest):
-    user = await register_user(data)
-    return {
-        "message": "User created",
-        "user_id": str(user["_id"]),
-    }
 
 @router.post("/login", dependencies=[Depends(RateLimiter(times=5, seconds=60))])
 async def login(data: LoginRequest):

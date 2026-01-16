@@ -10,3 +10,4 @@ passlib===1.7.4
 pymongo===4.16.0
 fastapi-limiter
 bcrypt===4.3.0
+python-jose
