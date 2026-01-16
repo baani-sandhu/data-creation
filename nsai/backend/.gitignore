@@ -29,7 +29,7 @@ keys/
 super_user_insert.py
 # macOS
 .DS_Store
-
+logging
 # Ignore while the setup still depends on requirements.txt files
 uv.lock
 
