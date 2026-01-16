@@ -26,7 +26,6 @@ async def register_user(data, creator_id:str, creator_role: str):
         "role": data.role,
         "managed_by": creator_id,
         "linked_users": [],
-        "managed_super_admins": [],
         "created_at": datetime.now(),
         "updated_at": datetime.now(),
     }
@@ -38,9 +37,7 @@ async def register_user(data, creator_id:str, creator_role: str):
         if creator_role == "super":
             await superadmin_collection.update_one(
                 {"_id": ObjectId(creator_id)},
-                {"$push": {
-                    "managed_admins": new_id
-                }}
+                {"$push": {"managed_admins": new_id}}
             )
         elif creator_role == "admin":
             await users_collection.update_one(
