@@ -6,4 +6,4 @@ db = client[settings.MONGO_DB]
 
 users_collection = db.users
 projects_collection = db.projects
-superadmin_collection = db.superadmin
+superadmin_collection = db.superadmin # Collection for superadmin users
