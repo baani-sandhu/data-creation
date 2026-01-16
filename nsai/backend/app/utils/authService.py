@@ -3,15 +3,14 @@ from bson import ObjectId
 from fastapi import HTTPException
 from jose import JWTError
 
-from app.config.db import users_collection
+from app.config.db import users_collection, superadmin_collection
 from app.utils.password import hash_password, verify_password, validate_password_strength
 from pymongo.errors import DuplicateKeyError
 
 from app.utils.jwt import create_access_token, create_refresh_token, decode_token
 from app.utils.token_blacklist import is_token_blacklisted, blacklist_token
 
-
-async def register_user(data):
+async def register_user(data, creator_id:str, creator_role: str):
     validate_password_strength(data.password)
     existing = await users_collection.find_one(
         {"$or": [{"email": data.email}, {"username": data.username}]}
@@ -24,25 +23,45 @@ async def register_user(data):
         "password_hash": hash_password(data.password),
         "first_name": data.first_name,
         "last_name": data.last_name,
-        "role": data.role, 
+        "role": data.role,
+        "managed_by": creator_id,
+        "linked_users": [],
         "created_at": datetime.now(),
         "updated_at": datetime.now(),
     }
 
     try:
         result = await users_collection.insert_one(user)
-        user["_id"] = result.inserted_id
-        return user
+        new_id = str(result.inserted_id)
+        
+        if creator_role == "super":
+            await superadmin_collection.update_one(
+                {"_id": ObjectId(creator_id)},
+                {"$push": {"managed_admins": new_id}}
+            )
+        elif creator_role == "admin":
+            await users_collection.update_one(
+                {"_id": ObjectId(creator_id)},
+                {"$push": {"linked_users": new_id}}
+            )
+        
     except DuplicateKeyError as e:
         # prevents two users to create same user at once (prevents double clicking)
         raise HTTPException(
             status_code=400, 
-            detail="Username or Email already taken (Database Conflict)"
+            detail="Username or Email already taken"
         )
-
+    user["_id"] = new_id
+    return user
 
 async def login_user(data):
-    user = await users_collection.find_one({"email": data.email})
+    user=await superadmin_collection.find_one({"email":data.email})
+    target_collection= superadmin_collection
+
+    if not user:
+        user = await users_collection.find_one({"email": data.email})
+        target_collection= users_collection
+    
     if not user or not verify_password(data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -51,14 +70,13 @@ async def login_user(data):
     )
 
     access_token = create_access_token(str(user["_id"]), user["email"], user["role"])
-    refresh_token = create_refresh_token(str(user["_id"]))
+    refresh_token = create_refresh_token(str(user["_id"]), str(user["role"]))
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
     }
-
 
 async def refresh_access_token(refresh_token: str):
     try:
