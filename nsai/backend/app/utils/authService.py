@@ -38,21 +38,24 @@ async def register_user(data, creator_id:str, creator_role: str):
         if creator_role == "super":
             await superadmin_collection.update_one(
                 {"_id": ObjectId(creator_id)},
-                {"$push": {"managed_admins": new_id}}
+                {"$push": {
+                    "managed_admins": new_id
+                }}
             )
         elif creator_role == "admin":
             await users_collection.update_one(
                 {"_id": ObjectId(creator_id)},
                 {"$push": {"linked_users": new_id}}
             )
-        return user
-    
+        
     except DuplicateKeyError as e:
         # prevents two users to create same user at once (prevents double clicking)
         raise HTTPException(
             status_code=400, 
             detail="Username or Email already taken"
         )
+    user["_id"] = new_id
+    return user
 
 async def login_user(data):
     user=await superadmin_collection.find_one({"email":data.email})
@@ -70,7 +73,7 @@ async def login_user(data):
     )
 
     access_token = create_access_token(str(user["_id"]), user["email"], user["role"])
-    refresh_token = create_refresh_token(str(user["_id"]))
+    refresh_token = create_refresh_token(str(user["_id"]), str(user["role"]))
 
     return {
         "access_token": access_token,
