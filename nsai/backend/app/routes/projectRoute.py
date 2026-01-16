@@ -14,7 +14,7 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
 
 @router.post("/", status_code=status.HTTP_201_CREATED , response_model=Dict[str, Any])
 async def create_project(project_data: ProjectCreate, current_user = Depends(get_current_user)):
-    project = await create_new_project(current_user["_id"], project_data)
+    project = await create_new_project(current_user["user_id"], project_data)
     return project
 
 @router.get("/", status_code=status.HTTP_200_OK)

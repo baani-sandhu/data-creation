@@ -8,19 +8,19 @@ from app.routes.schemas.projectSchema import ProjectCreate, ProjectUpdate
 from app.config.db import projects_collection
 from datetime import datetime
 
-async def create_new_project(user_id: ObjectId[str], data: ProjectCreate) -> Dict[str, Any]:
+async def create_new_project(user_id: str, data: ProjectCreate) -> Dict[str, Any]:
     """Todo: Implement the
     Logic for the User Project Creation Flow.
     Inserts a new project document into the MongoDB collection
     """
     project = {
         "name": data.name,
-        "user_id": user_id,
-        "base_model": data.base_model,
-        "dataset_link": data.dataset_link,
+        "user_id": ObjectId(user_id),
+        "base_model": data.base_model or "default-model",
+        "dataset_url": data.dataset_link or "",
         "metrics": {},
         "configuration": data.configuration or {},
-        "training_job_id": None,
+        "training_job_ids": [],
         "created_at": datetime.now(),
         "updated_at": datetime.now(),
     }
@@ -28,6 +28,8 @@ async def create_new_project(user_id: ObjectId[str], data: ProjectCreate) -> Dic
     try:
         result = await projects_collection.insert_one(project)
         project["_id"] = str(result.inserted_id)
+        project["user_id"] = str(project["user_id"])
+
         return project
     except DuplicateKeyError:
         raise HTTPException(
