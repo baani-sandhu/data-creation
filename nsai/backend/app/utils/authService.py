@@ -10,7 +10,7 @@ from pymongo.errors import DuplicateKeyError
 from app.utils.jwt import create_access_token, create_refresh_token, decode_token
 from app.utils.token_blacklist import is_token_blacklisted, blacklist_token
 
-async def register_user(data, creator_id:str):
+async def register_user(data, creator_id:str, creator_role: str):
     validate_password_strength(data.password)
     existing = await users_collection.find_one(
         {"$or": [{"email": data.email}, {"username": data.username}]}
@@ -33,13 +33,18 @@ async def register_user(data, creator_id:str):
 
     try:
         result = await users_collection.insert_one(user)
-        update_field = "managed_super_admins" if data.role == "admin" else "linked_users"
         new_id = str(result.inserted_id)
         
-        await users_collection.update_one(
-        {"_id": ObjectId(creator_id)},
-        {"$push": {update_field: new_id}}
-        )
+        if creator_role == "super":
+            await superadmin_collection.update_one(
+                {"_id": ObjectId(creator_id)},
+                {"$push": {"managed_admins": new_id}}
+            )
+        elif creator_role == "admin":
+            await users_collection.update_one(
+                {"_id": ObjectId(creator_id)},
+                {"$push": {"linked_users": new_id}}
+            )
         return user
     
     except DuplicateKeyError as e:
@@ -48,7 +53,6 @@ async def register_user(data, creator_id:str):
             status_code=400, 
             detail="Username or Email already taken"
         )
-
 
 async def login_user(data):
     user=await superadmin_collection.find_one({"email":data.email})

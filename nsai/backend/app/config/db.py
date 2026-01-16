@@ -5,4 +5,5 @@ client = AsyncIOMotorClient(settings.MONGO_URI)
 db = client[settings.MONGO_DB]
 
 users_collection = db.users
-projects = db.projects
+projects_collection = db.projects
+superadmin_collection = db.superadmin

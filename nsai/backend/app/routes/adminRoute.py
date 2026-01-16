@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from app.middleware.authMiddleware import get_current_user, require_role
+from app.middleware.authMiddleware import get_current_user, require_roles
 from app.routes.schemas.authSchema import RegisterRequest
 from app.utils.authService import register_user
 
