@@ -35,5 +35,8 @@ export const authService = {
 
   getMyTeam: async () => {
     return await api.get("/admin/my-team");
-  }
+  },
+  deleteUser: async (userId: string) => {
+  return await api.delete(`/admin/delete-user/${userId}`);
+}
 };

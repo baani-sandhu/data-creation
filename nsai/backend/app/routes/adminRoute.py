@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.middleware.authMiddleware import get_current_user, require_roles
 from app.routes.schemas.authSchema import RegisterRequest
-from app.utils.authService import register_user, get_managed_team
+from app.utils.authService import register_user, get_managed_team, delete_managed_user
 
 router = APIRouter(prefix="/admin", tags=["Admin Management"])
 
@@ -64,3 +64,18 @@ async def get_my_team(
     )
     
     return team_data
+
+
+@router.delete("/delete-user/{target_id}")
+async def delete_user(
+    target_id: str, 
+    current_user = Depends(get_current_user)
+):
+    if current_user["role"] not in ["super", "admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    return await delete_managed_user(
+        target_id=target_id,
+        creator_id=current_user["user_id"],
+        creator_role=current_user["role"]
+    )

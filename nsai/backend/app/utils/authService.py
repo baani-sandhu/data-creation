@@ -152,3 +152,28 @@ async def get_managed_team(user_id: str, role: str):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching team: {str(e)}")
+    
+
+async def delete_managed_user(target_id: str, creator_id: str, creator_role: str):
+    try:
+        # 1. Delete the user from the main collection
+        delete_result = await users_collection.delete_one({"_id": ObjectId(target_id)})
+        
+        if delete_result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # 2. Remove the reference from the Manager's list
+        if creator_role == "super":
+            await superadmin_collection.update_one(
+                {"_id": ObjectId(creator_id)},
+                {"$pull": {"managed_admins": target_id}}
+            )
+        elif creator_role == "admin":
+            await users_collection.update_one(
+                {"_id": ObjectId(creator_id)},
+                {"$pull": {"linked_users": target_id}}
+            )
+            
+        return {"message": "User deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
