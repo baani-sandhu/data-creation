@@ -19,7 +19,7 @@ export interface TokenPayload {
 
 export const authService = {
   register: (data: RegisterPayload) =>
-    api.post("/auth/register", data),
+    api.post("/admin/register-internal", data),
 
   login: (data: LoginPayload) =>
     api.post("/auth/login", data),

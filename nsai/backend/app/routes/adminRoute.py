@@ -14,20 +14,22 @@ async def register_user_or_admin(
     requester_role = current_user.get("role")
     target_role = payload.role
 
-    if requester_role == "admin":
+
+    if requester_role == "super":
+        # Superadmins can only create admins
+        if target_role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, 
+                detail="Superadmins can only create Admin accounts."
+            )
+    
+    elif requester_role == "admin":
+        # Admins can only create users
         if target_role != "user":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, 
                 detail="Admins are only permitted to create standard Users."
             )
-    
-    elif requester_role == "super":
-        if target_role not in ["admin", "user"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, 
-                detail="Invalid role. Superadmins can create 'admin' or 'user'."
-            )
-    
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 

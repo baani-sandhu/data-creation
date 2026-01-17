@@ -14,6 +14,7 @@ interface LoginFormProps extends React.ComponentProps<"div"> {
   onSubmit: (e: React.FormEvent) => void
   setEmail: (val: string) => void
   setPassword: (val: string) => void
+  isLoading?: boolean
 }
 
 export function LoginForm({
@@ -21,6 +22,7 @@ export function LoginForm({
   onSubmit,
   setEmail,
   setPassword,
+  isLoading,
   ...props
 }: LoginFormProps) {
   return (
@@ -60,7 +62,8 @@ export function LoginForm({
                 />
               </Field>
               <Field>
-                <Button type="submit" className="w-full">Login</Button>
+                <Button type="submit" className="w-full" disabled={isLoading}>Login</Button>
+                {isLoading ? "Authenticating..." : "Login"}
               </Field>
               <FieldSeparator className="*:data-[slot=field-separator-content]:bg-card">
                 Or continue with
