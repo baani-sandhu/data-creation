@@ -8,7 +8,7 @@ from app.routes.schemas.tokenSchema import RefreshTokenRequest
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
-@router.post("/login", dependencies=[Depends(RateLimiter(times=5, seconds=60))])
+@router.post("/login", dependencies=[Depends(RateLimiter(times=50, seconds=60))])
 async def login(data: LoginRequest):
     return await login_user(data)
 
