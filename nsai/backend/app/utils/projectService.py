@@ -64,7 +64,6 @@ async def  get_all_user_projects(user_id: str, page: int = 1, limit: int = 10):
 
 async def get_project_by_id(user_id: str, project_id: str):
     """Fetches a single project with ownership validation."""
-    print("Fetching project with ID:", project_id)
     if not ObjectId.is_valid(project_id):
         raise HTTPException(status_code=400, detail="Invalid project ID format.")
     
@@ -72,7 +71,7 @@ async def get_project_by_id(user_id: str, project_id: str):
         "_id": ObjectId(project_id),
         "user_id": ObjectId(user_id) 
     })
-    print("Fetched project:", project)
+
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
     
