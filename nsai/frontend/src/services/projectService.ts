@@ -1,21 +1,30 @@
 import api from "./axios";
-import type { Project, ProjectCreate, ProjectListResponse, ProjectUpdate } from "@/types/projectType";
+import type { ProjectResponse, ProjectCreate, ProjectListResponse, ProjectUpdate } from "@/types/projectType";
 
+const getAuthHeaders = () => {
+    const access_token = localStorage.getItem('access_token');
+    return {
+      headers: {
+        Authorization: `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
+      },
+    };
+  };
 
 export const projectService = {
 
     create: (data: ProjectCreate) =>
-        api.post<Project>("/projects/", data),
+        api.post<ProjectResponse>("/projects/", data , getAuthHeaders()),
 
     getAll: (page: number = 1, limit: number = 10) =>
-        api.get<ProjectListResponse>(`/projects/?page=${page}&limit=${limit}`),
+        api.get<ProjectListResponse>(`/projects/?page=${page}&limit=${limit}`, getAuthHeaders()),
 
     getById: (projectId: string) =>
-        api.get<Project>(`/projects/${projectId}`),
+        api.get<ProjectResponse>(`/projects/${projectId}`, getAuthHeaders()),
 
     update: (projectId: string, data: ProjectUpdate) =>
-        api.patch<Project>(`/projects/${projectId}`, data),
+        api.patch<ProjectResponse>(`/projects/${projectId}`, data, getAuthHeaders()),
 
     delete: (projectId: string) =>
-        api.delete(`/projects/${projectId}`),
+        api.delete(`/projects/${projectId}`, getAuthHeaders()),
 };
