@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import {
   Card,
   CardHeader,
@@ -26,23 +26,23 @@ import {
   ExternalLink,
 } from "lucide-react";
 import type { ProjectResponse } from "@/types/projectType";
+import ProjectEditDialog from "./ProjectEditDialog";
 
 interface ProjectCardProps {
   project: ProjectResponse;
-  onEdit: (project: ProjectResponse) => void;
   onDelete: (projectId: string) => void;
   onTrainingStart?: (projectId: string) => void;
+  onEditSuccess: () => void;
 }
 
 const ProjectCard = ({
   project,
-  onEdit,
   onDelete,
   onTrainingStart,
+  onEditSuccess,
 }: ProjectCardProps) => {
   const [isTrainingLoading, setIsTrainingLoading] = useState(false);
 
-  // Formatting the date
   const createdDate = new Date(project.created_at).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -50,11 +50,7 @@ const ProjectCard = ({
   });
 
   const handleDeleteClick = () => {
-    if (
-      confirm(
-        `Are you sure you want to delete "${project.name}"? This action cannot be undone.`
-      )
-    ) {
+    if (confirm(`Are you sure you want to delete "${project.name}"?`)) {
       onDelete(project._id);
     }
   };
@@ -69,7 +65,6 @@ const ProjectCard = ({
     }
   };
 
-  // Metric helpers
   const getMetricValue = (key: string) => {
     if (!project.metrics) return null;
     const found = Object.entries(project.metrics).find(
@@ -111,10 +106,19 @@ const ProjectCard = ({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuItem onClick={() => onEdit(project)}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit
-              </DropdownMenuItem>
+              
+              {/* --- ProjectEditDialog Integration --- */}
+              <ProjectEditDialog
+                project={project}
+                onSuccess={onEditSuccess}
+                trigger={
+                  <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Edit
+                  </DropdownMenuItem>
+                }
+              />
+              
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
                 onClick={handleDeleteClick}

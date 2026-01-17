@@ -1,9 +1,11 @@
-import { useState } from "react";
+"use client";
+
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Pencil } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +20,6 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -34,12 +35,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { projectService } from "@/services/projectService";
-import type { ProjectCreate } from "@/types/projectType";
+import type { ProjectResponse, ProjectUpdate } from "@/types/projectType";
 
-// Zod schema for form validation
 const projectFormSchema = z.object({
   name: z.string().min(1, "Project name is required"),
-  base_model: z.enum(["llama-3", "gpt-4", "default-model"]).optional(),
+  base_model: z.enum(["llama-3", "gpt-4", "default-model"]),
   dataset_link: z
     .string()
     .url("Please enter a valid URL")
@@ -50,55 +50,69 @@ const projectFormSchema = z.object({
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;
 
-interface ProjectCreateDialogProps {
+interface ProjectEditDialogProps {
+  project: ProjectResponse;
   onSuccess?: () => void;
+  // If you want to use it outside the DropdownMenu, you can pass a custom trigger
+  trigger?: React.ReactNode;
 }
 
-const ProjectCreateDialog = ({ onSuccess }: ProjectCreateDialogProps) => {
+const ProjectEditDialog = ({ project, onSuccess, trigger }: ProjectEditDialogProps) => {
   const [open, setOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
     defaultValues: {
-      name: "",
-      base_model: "default-model",
-      dataset_link: "",
-      configuration: "",
+      name: project.name,
+      base_model: (project.base_model as any) || "default-model",
+      dataset_link: project.dataset_url || "",
+      configuration: project.configuration 
+        ? JSON.stringify(project.configuration, null, 2) 
+        : "",
     },
   });
+
+  // Ensure form resets if the project prop changes
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        name: project.name,
+        base_model: (project.base_model as any) || "default-model",
+        dataset_link: project.dataset_url || "",
+        configuration: project.configuration 
+          ? JSON.stringify(project.configuration, null, 2) 
+          : "",
+      });
+    }
+  }, [project, open, form]);
 
   const onSubmit = async (data: ProjectFormValues) => {
     setIsLoading(true);
     try {
-      // Parse configuration if provided
       let parsedConfiguration: Record<string, any> | undefined;
-      if (data.configuration && data.configuration.trim()) {
+      if (data.configuration?.trim()) {
         try {
           parsedConfiguration = JSON.parse(data.configuration);
         } catch {
-          // If not valid JSON, treat as plain text
           parsedConfiguration = { description: data.configuration };
         }
       }
 
-      // Prepare the payload according to ProjectCreate interface
-      const payload: ProjectCreate = {
+      const payload: ProjectUpdate = {
         name: data.name,
         base_model: data.base_model,
         dataset_link: data.dataset_link || undefined,
         configuration: parsedConfiguration,
       };
 
-      await projectService.create(payload);
+      await projectService.update(project._id, payload);
       
-      toast.success("Project created successfully!");
-      form.reset();
+      toast.success("Project updated successfully!");
       setOpen(false);
       onSuccess?.();
     } catch (error: any) {
-      const errorMessage =
-        error?.response?.data?.message || "Failed to create project";
+      const errorMessage = error?.response?.data?.detail || "Failed to update project";
       toast.error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -108,17 +122,18 @@ const ProjectCreateDialog = ({ onSuccess }: ProjectCreateDialogProps) => {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>
-          <Plus className="h-4 w-4" />
-          Add Project
-        </Button>
+        {trigger || (
+          <Button variant="ghost" size="sm">
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Create New Project</DialogTitle>
+          <DialogTitle>Edit Project</DialogTitle>
           <DialogDescription>
-            Create a new project to start training your model. Fill in the
-            details below.
+            Update the details for "{project.name}".
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -130,7 +145,7 @@ const ProjectCreateDialog = ({ onSuccess }: ProjectCreateDialogProps) => {
                 <FormItem>
                   <FormLabel>Project Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter project name" {...field} />
+                    <Input {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -143,13 +158,10 @@ const ProjectCreateDialog = ({ onSuccess }: ProjectCreateDialogProps) => {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Base Model</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value}
-                  >
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a base model" />
+                        <SelectValue />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -158,9 +170,6 @@ const ProjectCreateDialog = ({ onSuccess }: ProjectCreateDialogProps) => {
                       <SelectItem value="default-model">Default Model</SelectItem>
                     </SelectContent>
                   </Select>
-                  <FormDescription>
-                    Choose the base model for your project
-                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -171,17 +180,10 @@ const ProjectCreateDialog = ({ onSuccess }: ProjectCreateDialogProps) => {
               name="dataset_link"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Dataset Link (Optional)</FormLabel>
+                  <FormLabel>Dataset Link</FormLabel>
                   <FormControl>
-                    <Input
-                      type="url"
-                      placeholder="https://example.com/dataset"
-                      {...field}
-                    />
+                    <Input type="url" {...field} />
                   </FormControl>
-                  <FormDescription>
-                    URL to your dataset (optional)
-                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -192,17 +194,10 @@ const ProjectCreateDialog = ({ onSuccess }: ProjectCreateDialogProps) => {
               name="configuration"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Configuration (Optional)</FormLabel>
+                  <FormLabel>Configuration (JSON)</FormLabel>
                   <FormControl>
-                    <Textarea
-                      placeholder='Enter JSON configuration or descriptive text, e.g., {"epochs": 10, "batch_size": 32}'
-                      className="min-h-[100px]"
-                      {...field}
-                    />
+                    <Textarea className="min-h-[100px] font-mono text-xs" {...field} />
                   </FormControl>
-                  <FormDescription>
-                    JSON configuration or descriptive text
-                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -219,7 +214,7 @@ const ProjectCreateDialog = ({ onSuccess }: ProjectCreateDialogProps) => {
               </Button>
               <Button type="submit" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Create Project
+                Save Changes
               </Button>
             </DialogFooter>
           </form>
@@ -229,4 +224,4 @@ const ProjectCreateDialog = ({ onSuccess }: ProjectCreateDialogProps) => {
   );
 };
 
-export default ProjectCreateDialog;
+export default ProjectEditDialog;

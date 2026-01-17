@@ -55,9 +55,9 @@ export default function Projects() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects.map((item) => (
             <ProjectCard
+              onEditSuccess={fetchProjects}
               key={item._id}
               project={item}
-              onEdit={(proj) => console.log(proj)}
               onDelete={handleDelete} // Correctly passed
             />
           ))}
