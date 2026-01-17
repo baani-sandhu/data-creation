@@ -19,7 +19,7 @@ export interface TokenPayload {
 
 export const authService = {
   register: (data: RegisterPayload) =>
-    api.post("/auth/register", data),
+    api.post("/admin/register-internal", data),
 
   login: (data: LoginPayload) =>
     api.post("/auth/login", data),
@@ -32,4 +32,11 @@ export const authService = {
 
   getCurrentUser: () =>
     api.get("/auth/me"),
+
+  getMyTeam: async () => {
+    return await api.get("/admin/my-team");
+  },
+  deleteUser: async (userId: string) => {
+  return await api.delete(`/admin/delete-user/${userId}`);
+}
 };

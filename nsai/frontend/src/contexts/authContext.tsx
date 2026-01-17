@@ -5,7 +5,7 @@ import type { LoginPayload, RegisterPayload } from "../services/authService";
 export interface User {
   user_id: string;
   email: string;
-  role: string;
+  role: 'super' | 'admin' | 'user';
 }
 
 interface AuthContextType {

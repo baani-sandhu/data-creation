@@ -6,7 +6,7 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldSeparator,
+  // FieldSeparator,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 
@@ -14,6 +14,7 @@ interface LoginFormProps extends React.ComponentProps<"div"> {
   onSubmit: (e: React.FormEvent) => void
   setEmail: (val: string) => void
   setPassword: (val: string) => void
+  isLoading?: boolean
 }
 
 export function LoginForm({
@@ -21,6 +22,7 @@ export function LoginForm({
   onSubmit,
   setEmail,
   setPassword,
+  isLoading,
   ...props
 }: LoginFormProps) {
   return (
@@ -60,9 +62,10 @@ export function LoginForm({
                 />
               </Field>
               <Field>
-                <Button type="submit" className="w-full">Login</Button>
+                <Button type="submit" className="w-full" disabled={isLoading}>Login</Button>
+                {isLoading ? "Authenticating..." : ""}
               </Field>
-              <FieldSeparator className="*:data-[slot=field-separator-content]:bg-card">
+              {/* <FieldSeparator className="*:data-[slot=field-separator-content]:bg-card">
                 Or continue with
               </FieldSeparator>
               <div className="grid grid-cols-2 gap-4">
@@ -78,10 +81,7 @@ export function LoginForm({
                   </svg>
                   Apple
                 </Button>
-              </div>
-              <FieldDescription className="text-center">
-                Don&apos;t have an account? <a href="/register" className="underline underline-offset-4">Sign up</a>
-              </FieldDescription>
+              </div> */}
             </FieldGroup>
           </form>
           <div className="bg-muted relative hidden md:block">

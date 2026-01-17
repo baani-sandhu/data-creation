@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
 import Layout from "./components/Layout/Layout";
-import PrivateRoute from "./components/PrivateRoute";
+import ProtectedRoute from "./components/PrivateRoute";
 import { AuthProvider } from "./contexts/authContext";
 
 const Login = lazy(() => import("./pages/Login"));
@@ -11,40 +11,52 @@ const Projects = lazy(() => import("./pages/Projects"));
 const Datasets = lazy(() => import("./pages/Datasets"));
 const Models = lazy(() => import("./pages/Models"));
 const Training = lazy(() => import("./pages/Training"));
+const Manage = lazy(() => import("./pages/ManageUsers"));
 
 import { ThemeProvider } from "@/components/theme-provider";
 
 export default function App() {
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <AuthProvider>
-        <BrowserRouter>
-          <Suspense fallback={<div className="p-6">Loading...</div>}>
-            <Routes>
-              {/* Public routes, un-authenticated users will be redirected to these routes after getting authcontext*/}
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
+    <AuthProvider>
+      <BrowserRouter>
+        <Suspense fallback={<div className="p-6 text-center">Loading Application...</div>}>
+          <Routes>
+            {/* PUBLIC ROUTE */}
+            <Route path="/login" element={<Login />} />
 
-              {/* Protected routes, only authenticated users will access them, if someone tries to access it via /*,
-              they will be routed to login and register */}
-              <Route
-                element={
-                  <PrivateRoute>
-                    <Layout />
-                  </PrivateRoute>
-                }
-              >
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/projects" element={<Projects />} />
-                <Route path="/datasets" element={<Datasets />} />
-                <Route path="/models" element={<Models />} />
-                <Route path="/training" element={<Training />} />
-              </Route>
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
-        </AuthProvider>
-    </ThemeProvider>
+            {/* PROTECTED ROUTES - Authenticated Users Only */}
+            <Route
+              element={
+                <ProtectedRoute allowedRoles={["super", "admin", "user"]}>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/projects" element={<Projects />} />
+              <Route path="/datasets" element={<Datasets />} />
+              <Route path="/models" element={<Models />} />
+              <Route path="/training" element={<Training />} />
+            </Route>
+
+            {/* HIGHLY PROTECTED ROUTE - Only Super or Admin can Register others */}
+            <Route
+              element={
+                <ProtectedRoute allowedRoles={["super", "admin"]}>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/register" element={<Register />} />
+              <Route path="/manage" element={<Manage />} />
+            </Route>
+
+            {/* CATCH ALL */}
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
