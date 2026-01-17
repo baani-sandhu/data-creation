@@ -117,3 +117,38 @@ async def logout_user(refresh_token: str):
 
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+    
+
+async def get_managed_team(user_id: str, role: str):
+    try:
+        if role == "super":
+            manager = await superadmin_collection.find_one({"_id": ObjectId(user_id)})
+            # Superadmins look for IDs in 'managed_admins'
+            child_ids = manager.get("managed_admins", []) if manager else []
+        else:
+            manager = await users_collection.find_one({"_id": ObjectId(user_id)})
+            # Admins look for IDs in 'linked_users'
+            child_ids = manager.get("linked_users", []) if manager else []
+
+        if not child_ids:
+            return []
+        
+        object_ids = [ObjectId(uid) for uid in child_ids]
+        
+        cursor = users_collection.find(
+            {"_id": {"$in": object_ids}},
+            {"password_hash": 0}
+        )
+        
+        team = await cursor.to_list(length=None)
+
+        # 3. Format IDs for JSON
+        for member in team:
+            member["_id"] = str(member["_id"])
+            if "created_at" in member:
+                member["created_at"] = member["created_at"].isoformat()
+
+        return team
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching team: {str(e)}")

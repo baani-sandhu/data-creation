@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.middleware.authMiddleware import get_current_user, require_roles
 from app.routes.schemas.authSchema import RegisterRequest
-from app.utils.authService import register_user
+from app.utils.authService import register_user, get_managed_team
 
 router = APIRouter(prefix="/admin", tags=["Admin Management"])
 
@@ -46,3 +46,21 @@ async def register_user_or_admin(
         "message": f"Successfully registered {target_role}",
         "id": new_user_id
     }
+
+@router.get("/my-team")
+async def get_my_team(
+    current_user = Depends(get_current_user)
+):
+    # Only super and admin should be allowed to hit this
+    if current_user["role"] not in ["super", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Access denied"
+        )
+
+    team_data = await get_managed_team(
+        user_id=current_user["user_id"], 
+        role=current_user["role"]
+    )
+    
+    return team_data

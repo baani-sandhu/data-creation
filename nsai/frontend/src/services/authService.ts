@@ -32,4 +32,8 @@ export const authService = {
 
   getCurrentUser: () =>
     api.get("/auth/me"),
+
+  getMyTeam: async () => {
+    return await api.get("/admin/my-team");
+  }
 };
