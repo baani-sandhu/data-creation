@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   Card,
   CardHeader,
@@ -25,14 +25,12 @@ import {
   Loader2,
   ExternalLink,
 } from "lucide-react";
-import { projectService } from "@/services/projectService";
-import { toast } from "sonner";
-import type { ProjectCardData } from "@/types/projectType";
+import type { ProjectResponse } from "@/types/projectType";
 
 interface ProjectCardProps {
-  project: ProjectCardData;
-  onEdit: (project: ProjectCardData) => void;
-  onDelete: (project: ProjectCardData) => void;
+  project: ProjectResponse;
+  onEdit: (project: ProjectResponse) => void;
+  onDelete: (projectId: string) => void;
   onTrainingStart?: (projectId: string) => void;
 }
 
@@ -44,138 +42,97 @@ const ProjectCard = ({
 }: ProjectCardProps) => {
   const [isTrainingLoading, setIsTrainingLoading] = useState(false);
 
-  const createdDate = new Date(project.created_at).toLocaleDateString(
-    "en-US",
-    {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }
-  );
+  // Formatting the date
+  const createdDate = new Date(project.created_at).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 
-  const handleDelete = async () => {
+  const handleDeleteClick = () => {
     if (
-      !confirm(
+      confirm(
         `Are you sure you want to delete "${project.name}"? This action cannot be undone.`
       )
     ) {
-      return;
-    }
-
-    try {
-      await projectService.delete(project._id);
-      toast.success("Project deleted successfully");
-      onDelete(project);
-    } catch (error: any) {
-      const errorMessage =
-        error?.response?.data?.message || "Failed to delete project";
-      toast.error(errorMessage);
+      onDelete(project._id);
     }
   };
 
   const handleStartTraining = async () => {
+    if (!onTrainingStart) return;
     setIsTrainingLoading(true);
     try {
-      if (onTrainingStart) {
-        await onTrainingStart(project._id);
-      } else {
-        // Placeholder for training service integration
-        toast.info("Training service integration coming soon");
-      }
-    } catch (error: any) {
-      const errorMessage =
-        error?.response?.data?.message || "Failed to start training";
-      toast.error(errorMessage);
+      await onTrainingStart(project._id);
     } finally {
       setIsTrainingLoading(false);
     }
   };
 
-  // Format metrics display - prioritize Loss, Accuracy, F1 Score if available
+  // Metric helpers
   const getMetricValue = (key: string) => {
     if (!project.metrics) return null;
-    const lowerKey = key.toLowerCase();
-    for (const [metricKey, value] of Object.entries(project.metrics)) {
-      if (metricKey.toLowerCase() === lowerKey) {
-        return value;
-      }
-    }
-    return null;
+    const found = Object.entries(project.metrics).find(
+      ([k]) => k.toLowerCase() === key.toLowerCase()
+    );
+    return found ? found[1] : null;
   };
 
-  const formatMetricValue = (
-    value: number | string,
-    metricKey: string
-  ): string => {
+  const formatMetricValue = (value: number | string, key: string): string => {
     if (typeof value === "number") {
-      // Format accuracy as percentage (0-1 range as percentage)
-      if (metricKey.toLowerCase() === "accuracy" && value <= 1 && value >= 0) {
+      if (key.toLowerCase() === "accuracy" && value <= 1) {
         return `${(value * 100).toFixed(1)}%`;
       }
-      // Format other decimal numbers (Loss, F1 Score, etc.)
-      if (value < 1) {
-        return value.toFixed(3);
-      }
-      // Format whole numbers or larger decimals
-      return value.toString();
+      return value < 1 ? value.toFixed(3) : value.toString();
     }
     return String(value);
   };
 
   const loss = getMetricValue("loss");
   const accuracy = getMetricValue("accuracy");
-  const f1Score = getMetricValue("f1_score") || getMetricValue("f1score");
 
   return (
-    <Card className="flex flex-col transition-shadow hover:shadow-lg w-full max-w-md">
-      {/* Header */}
+    <Card className="flex flex-col transition-shadow hover:shadow-lg w-full">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-3 flex-1 min-w-0">
             <h3 className="text-lg font-semibold text-foreground truncate">
               {project.name}
             </h3>
-            <Badge
-              variant="secondary"
-              className="text-xs font-normal shrink-0 bg-muted text-muted-foreground"
-            >
+            <Badge variant="secondary" className="text-xs font-normal shrink-0">
               {project.base_model}
             </Badge>
           </div>
 
-          {/* Three-dot menu - always visible */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+              <Button variant="ghost" size="icon" className="h-8 w-8">
                 <MoreVertical className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem onClick={() => onEdit(project)}>
                 <Pencil className="mr-2 h-4 w-4" />
-                Edit Project
+                Edit
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
-                onClick={handleDelete}
+                onClick={handleDeleteClick}
               >
                 <Trash className="mr-2 h-4 w-4" />
-                Delete Project
+                Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </CardHeader>
 
-      {/* Content */}
       <CardContent className="space-y-4 flex-1">
-        {/* Created Date */}
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Calendar className="h-4 w-4 shrink-0" />
           <span>Created: {createdDate}</span>
         </div>
 
-        {/* Dataset URL */}
         {project.dataset_url && (
           <a
             href={project.dataset_url}
@@ -189,44 +146,27 @@ const ProjectCard = ({
           </a>
         )}
 
-        {/* Metrics Section */}
-        {(loss !== null || accuracy !== null || f1Score !== null) && (
-          <div className="space-y-2 pt-2">
-            <h4 className="text-sm font-medium text-foreground">Metrics</h4>
-            <div className="space-y-1.5">
+        {(loss !== null || accuracy !== null) && (
+          <div className="space-y-2 pt-2 border-t">
+            <div className="flex justify-between text-sm">
               {loss !== null && (
-                <div className="flex items-center justify-between text-sm py-1">
-                  <span className="text-muted-foreground">Loss:</span>
-                  <span className="font-medium text-foreground">
-                    {formatMetricValue(loss, "loss")}
-                  </span>
-                </div>
+                <span className="text-muted-foreground">
+                  Loss: <b className="text-foreground">{formatMetricValue(loss, "loss")}</b>
+                </span>
               )}
               {accuracy !== null && (
-                <div className="flex items-center justify-between text-sm py-1">
-                  <span className="text-muted-foreground">Accuracy:</span>
-                  <span className="font-medium text-foreground">
-                    {formatMetricValue(accuracy, "accuracy")}
-                  </span>
-                </div>
-              )}
-              {f1Score !== null && (
-                <div className="flex items-center justify-between text-sm py-1">
-                  <span className="text-muted-foreground">F1 Score:</span>
-                  <span className="font-medium text-foreground">
-                    {formatMetricValue(f1Score, "f1_score")}
-                  </span>
-                </div>
+                <span className="text-muted-foreground">
+                  Acc: <b className="text-foreground">{formatMetricValue(accuracy, "accuracy")}</b>
+                </span>
               )}
             </div>
           </div>
         )}
       </CardContent>
 
-      {/* Footer */}
       <CardFooter className="pt-4">
         <Button
-          className="w-full gap-2 h-11 text-base font-medium"
+          className="w-full gap-2"
           onClick={handleStartTraining}
           disabled={isTrainingLoading}
         >

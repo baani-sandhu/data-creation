@@ -12,7 +12,6 @@ const getAuthHeaders = () => {
   };
 
 export const projectService = {
-
     create: (data: ProjectCreate) =>
         api.post<ProjectResponse>("/projects/", data , getAuthHeaders()),
 
