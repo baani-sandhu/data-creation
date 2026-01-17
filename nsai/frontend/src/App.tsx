@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
 import Layout from "./components/Layout/Layout";
-import PrivateRoute from "./components/PrivateRoute";
+import ProtectedRoute from "./components/PrivateRoute";
 import { AuthProvider } from "./contexts/authContext";
 
 const Login = lazy(() => import("./pages/Login"));
@@ -11,24 +11,25 @@ const Projects = lazy(() => import("./pages/Projects"));
 const Datasets = lazy(() => import("./pages/Datasets"));
 const Models = lazy(() => import("./pages/Models"));
 const Training = lazy(() => import("./pages/Training"));
+const Manage = lazy(() => import("./pages/ManageUsers"));
+
+import { ThemeProvider } from "@/components/theme-provider";
 
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Suspense fallback={<div className="p-6">Loading...</div>}>
+        <Suspense fallback={<div className="p-6 text-center">Loading Application...</div>}>
           <Routes>
-            {/* Public routes, un-authenticated users will be redirected to these routes after getting authcontext*/}
+            {/* PUBLIC ROUTE */}
             <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
 
-            {/* Protected routes, only authenticated users will access them, if someone tries to access it via /*,
-            they will be routed to login and register */}
+            {/* PROTECTED ROUTES - Authenticated Users Only */}
             <Route
               element={
-                <PrivateRoute>
+                <ProtectedRoute allowedRoles={["super", "admin", "user"]}>
                   <Layout />
-                </PrivateRoute>
+                </ProtectedRoute>
               }
             >
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -38,6 +39,21 @@ export default function App() {
               <Route path="/models" element={<Models />} />
               <Route path="/training" element={<Training />} />
             </Route>
+
+            {/* HIGHLY PROTECTED ROUTE - Only Super or Admin can Register others */}
+            <Route
+              element={
+                <ProtectedRoute allowedRoles={["super", "admin"]}>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/register" element={<Register />} />
+              <Route path="/manage" element={<Manage />} />
+            </Route>
+
+            {/* CATCH ALL */}
+            <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </Suspense>
       </BrowserRouter>

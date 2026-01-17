@@ -1,7 +1,8 @@
 import { Outlet } from "react-router-dom";
-import Sidebar from "./Sidebar.tsx";
+import {Sidebar} from "./Sidebar.tsx";
 import Header from "./Header.tsx";
 import Footer from "./Footer.tsx";
+import { Toaster } from "@/components/ui/sonner";
 
 export default function Layout() {
   return (
@@ -14,6 +15,7 @@ export default function Layout() {
         </main>
         <Footer />
       </div>
+      <Toaster />
     </div>
   );
 }

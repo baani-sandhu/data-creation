@@ -36,7 +36,7 @@ api.interceptors.response.use(
 
     const isAuthRoute =
       originalRequest.url?.includes("/auth/login") ||
-      originalRequest.url?.includes("/auth/register");
+      originalRequest.url?.includes("/admin/register-internal");
 
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthRoute) {
       if (isRefreshing) {
