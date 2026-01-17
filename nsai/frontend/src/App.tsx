@@ -13,6 +13,8 @@ const Models = lazy(() => import("./pages/Models"));
 const Training = lazy(() => import("./pages/Training"));
 const Manage = lazy(() => import("./pages/ManageUsers"));
 
+import { ThemeProvider } from "@/components/theme-provider";
+
 export default function App() {
   return (
     <AuthProvider>
