@@ -2,53 +2,118 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
-import { LFProgress } from "../ui/LFProgress";
-
-const totalChunks = 12;
+import { S, GenerationResult } from "../../state";
 
 export function Step4LLMGeneration() {
   const navigate = useNavigate();
-  const [progress, setProgress] = useState(0);
-  const [currentChunk, setCurrentChunk] = useState(1);
-  const [isComplete, setIsComplete] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [generationResult, setGenerationResult] = useState<GenerationResult | null>(
+    S.generationResult ?? null
+  );
+
+  const API_BASE = "http://localhost:8001";
 
   useEffect(() => {
-    let isMounted = true;
-    let chunk = 1;
-
-    const tick = () => {
-      if (!isMounted) return;
-
-      const nextChunk = Math.min(chunk + 1, totalChunks);
-      chunk = nextChunk;
-      setCurrentChunk(nextChunk);
-      setProgress((nextChunk / totalChunks) * 100);
-
-      if (nextChunk >= totalChunks) {
-        setIsComplete(true);
+    const runGeneration = async () => {
+      setError("");
+      if (!S.jobId) {
+        setError("No job found. Please create a job first.");
+        setIsLoading(false);
         return;
       }
 
-      setTimeout(tick, 450);
+      setIsLoading(true);
+      try {
+        const response = await fetch(`${API_BASE}/jobs/${S.jobId}/generate`, {
+          method: "POST",
+        });
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || "Failed to generate pairs.");
+        }
+        const data: GenerationResult = await response.json();
+        S.generationResult = data;
+        setGenerationResult(data);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unable to generate pairs.";
+        setError(message);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
-    setProgress((chunk / totalChunks) * 100);
-    setTimeout(tick, 600);
-
-    return () => {
-      isMounted = false;
-    };
+    runGeneration();
   }, []);
 
   const handleNext = () => {
     navigate("/review");
   };
 
+  const handleRetry = () => {
+    if (isLoading) return;
+    setError("");
+    setGenerationResult(null);
+    setIsLoading(true);
+
+    const runRetry = async () => {
+      try {
+        if (!S.jobId) {
+          throw new Error("No job found. Please create a job first.");
+        }
+        const response = await fetch(`${API_BASE}/jobs/${S.jobId}/generate`, {
+          method: "POST",
+        });
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || "Failed to generate pairs.");
+        }
+        const data: GenerationResult = await response.json();
+        S.generationResult = data;
+        setGenerationResult(data);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unable to generate pairs.";
+        setError(message);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    runRetry();
+  };
+
   return (
     <div className="space-y-4">
-      {!isComplete && (
+      {isLoading && (
         <LFCard>
-          <div className="flex flex-col items-center justify-center gap-4 py-6">
+          <div className="flex flex-col items-center justify-center gap-4 py-10">
+            <svg width="36" height="36" viewBox="0 0 36 36" aria-label="Loading">
+              <circle
+                cx="18"
+                cy="18"
+                r="14"
+                fill="none"
+                stroke="var(--border-color)"
+                strokeWidth="4"
+                opacity="0.25"
+              />
+              <path
+                d="M18 4a14 14 0 0 1 14 14"
+                fill="none"
+                stroke="var(--ink-dark)"
+                strokeWidth="4"
+                strokeLinecap="round"
+              >
+                <animateTransform
+                  attributeName="transform"
+                  type="rotate"
+                  from="0 18 18"
+                  to="360 18 18"
+                  dur="1s"
+                  repeatCount="indefinite"
+                />
+              </path>
+            </svg>
             <div
               style={{
                 fontFamily: "var(--font-mono)",
@@ -56,25 +121,13 @@ export function Step4LLMGeneration() {
                 color: "var(--text-muted)",
               }}
             >
-              Extracting pairs from chunk {currentChunk} of {totalChunks}...
-            </div>
-            <div className="w-full max-w-[520px]">
-              <LFProgress value={progress} />
-            </div>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "12px",
-                color: "var(--ink-dark)",
-              }}
-            >
-              {Math.round(progress)}% complete
+              Extracting pairs from your document...
             </div>
           </div>
         </LFCard>
       )}
 
-      {isComplete && (
+      {!isLoading && !error && generationResult && (
         <>
           <div className="grid grid-cols-4 gap-4">
             <LFCard>
@@ -96,7 +149,7 @@ export function Step4LLMGeneration() {
                     fontWeight: 600,
                   }}
                 >
-                  48
+                  {generationResult.total_pairs}
                 </div>
               </div>
             </LFCard>
@@ -120,7 +173,7 @@ export function Step4LLMGeneration() {
                     color: "var(--success-green)",
                   }}
                 >
-                  41
+                  {generationResult.high_confidence}
                 </div>
               </div>
             </LFCard>
@@ -144,7 +197,7 @@ export function Step4LLMGeneration() {
                     color: "var(--error-red)",
                   }}
                 >
-                  7
+                  {generationResult.low_confidence}
                 </div>
               </div>
             </LFCard>
@@ -167,16 +220,27 @@ export function Step4LLMGeneration() {
                     fontWeight: 600,
                   }}
                 >
-                  0.85
+                  {S.jobData?.confidence_threshold ?? "—"}
                 </div>
               </div>
             </LFCard>
           </div>
 
           <div className="flex justify-end pt-4">
-            <LFButton onClick={handleNext}>Review Results â†’</LFButton>
+            <LFButton onClick={handleNext} disabled={isLoading}>
+              Review Results ?
+            </LFButton>
           </div>
         </>
+      )}
+
+      {!isLoading && error && (
+        <div className="space-y-3">
+          <p style={{ color: "var(--error-red)", fontSize: "12px" }}>{error}</p>
+          <LFButton onClick={handleRetry} disabled={isLoading}>
+            Retry
+          </LFButton>
+        </div>
       )}
     </div>
   );

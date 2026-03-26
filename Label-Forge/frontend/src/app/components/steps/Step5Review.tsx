@@ -1,222 +1,312 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
-import { LFBadge, LabelColor } from "../ui/LFBadge";
-import { AlertCircle } from "lucide-react";
+import { LFBadge } from "../ui/LFBadge";
+import { S, ResultItem, GenerationResult } from "../../state";
 
-interface LabeledItem {
-  id: string;
-  text: string;
-  label: string;
-  labelColor: LabelColor;
-  confidence: number;
-  reasoning?: string;
+interface ResultsStats {
+  total: number;
+  approved: number;
+  pending: number;
+  discarded: number;
+  human_reviewed: number;
+  by_run: Record<string, number>;
 }
-
-const mockAutoSaved: LabeledItem[] = [
-  {
-    id: "chunk_001",
-    text: "Machine learning models require high-quality labeled training data to achieve optimal performance.",
-    label: "Training Data",
-    labelColor: "blue",
-    confidence: 0.92,
-  },
-  {
-    id: "chunk_002",
-    text: "Data annotation is a critical step in the ML pipeline. Human annotators classify and tag data points.",
-    label: "Annotation Process",
-    labelColor: "red",
-    confidence: 0.88,
-  },
-  {
-    id: "chunk_004",
-    text: "Quality control in data labeling involves verifying accuracy and maintaining consistency.",
-    label: "Quality Control",
-    labelColor: "amber",
-    confidence: 0.91,
-  },
-  {
-    id: "chunk_005",
-    text: "Active learning strategies can reduce labeling costs by selecting the most informative samples.",
-    label: "Annotation Process",
-    labelColor: "red",
-    confidence: 0.87,
-  },
-];
-
-const mockReviewRequired: LabeledItem[] = [
-  {
-    id: "chunk_003",
-    text: "Fine-tuning large language models on domain-specific data can significantly improve their performance.",
-    label: "Model Performance",
-    labelColor: "green",
-    confidence: 0.73,
-    reasoning: "Ambiguous between Model Performance and Training Data",
-  },
-];
-
-const mockLabels = [
-  { name: "Training Data", color: "blue" as LabelColor },
-  { name: "Model Performance", color: "green" as LabelColor },
-  { name: "Annotation Process", color: "red" as LabelColor },
-  { name: "Quality Control", color: "amber" as LabelColor },
-];
 
 export function Step5Review() {
   const navigate = useNavigate();
-  const [reviewItems, setReviewItems] = useState<LabeledItem[]>(mockReviewRequired);
-  const [showFeedback, setShowFeedback] = useState(true);
+  const [approvedResults, setApprovedResults] = useState<ResultItem[]>(S.approvedResults ?? []);
+  const [pendingResults, setPendingResults] = useState<ResultItem[]>(S.pendingResults ?? []);
+  const [editedPairs, setEditedPairs] = useState<Record<string, Record<string, string>>>({});
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [approvingIds, setApprovingIds] = useState<Record<string, boolean>>({});
+  const [discardingIds, setDiscardingIds] = useState<Record<string, boolean>>({});
+  const [addingExampleIds, setAddingExampleIds] = useState<Record<string, boolean>>({});
+  const [addedExampleIds, setAddedExampleIds] = useState<Record<string, boolean>>({});
+  const [stats, setStats] = useState<ResultsStats | null>(null);
+  const [feedbackCount, setFeedbackCount] = useState(S.feedbackCount ?? 0);
+  const [isRerunning, setIsRerunning] = useState(false);
 
-  const handleRelabel = (itemId: string, newLabel: { name: string; color: LabelColor }) => {
-    setReviewItems(
-      reviewItems.map((item) =>
-        item.id === itemId
-          ? { ...item, label: newLabel.name, labelColor: newLabel.color, confidence: 0.95 }
-          : item
-      )
-    );
+  const API_BASE = "http://localhost:8001";
+
+  const refreshResultsAndStats = async () => {
+    setError("");
+    if (!S.jobId) {
+      setError("No job found. Please create a job first.");
+      return;
+    }
+
+    try {
+      const [resultsResponse, statsResponse] = await Promise.all([
+        fetch(`${API_BASE}/jobs/${S.jobId}/results`),
+        fetch(`${API_BASE}/jobs/${S.jobId}/results/stats`),
+      ]);
+
+      if (!resultsResponse.ok) {
+        const message = await resultsResponse.text();
+        throw new Error(message || "Failed to load results.");
+      }
+      if (!statsResponse.ok) {
+        const message = await statsResponse.text();
+        throw new Error(message || "Failed to load stats.");
+      }
+
+      const resultsData = await resultsResponse.json();
+      const statsData = await statsResponse.json();
+
+      const results: ResultItem[] = resultsData.results || [];
+      S.results = results;
+      S.approvedResults = results.filter((r) => r.approved && !r.discarded);
+      S.pendingResults = results.filter((r) => !r.approved && !r.discarded);
+
+      setApprovedResults(S.approvedResults);
+      setPendingResults(S.pendingResults);
+      setStats(statsData as ResultsStats);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to load results.";
+      setError(message);
+    }
   };
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      setIsLoading(true);
+      await refreshResultsAndStats();
+      setIsLoading(false);
+    };
+
+    fetchAll();
+  }, []);
 
   const handleNext = () => {
     navigate("/export");
   };
 
+  const updateStateStores = (nextApproved: ResultItem[], nextPending: ResultItem[]) => {
+    setApprovedResults(nextApproved);
+    setPendingResults(nextPending);
+    S.approvedResults = nextApproved;
+    S.pendingResults = nextPending;
+    S.results = [...nextApproved, ...nextPending];
+  };
+
+  const getEditedPair = (item: ResultItem) => {
+    const edits = editedPairs[item._id] || {};
+    return { ...item.pair, ...edits };
+  };
+
+  const handleApprove = async (item: ResultItem) => {
+    if (!S.jobId) return;
+    setError("");
+    setApprovingIds((prev) => ({ ...prev, [item._id]: true }));
+    try {
+      const updatedPair = getEditedPair(item);
+      const response = await fetch(`${API_BASE}/jobs/${S.jobId}/results/${item._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approved: true, pair: updatedPair }),
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to approve result.");
+      }
+
+      const approvedItem: ResultItem = {
+        ...item,
+        approved: true,
+        human_reviewed: true,
+        pair: updatedPair,
+      };
+      const nextPending = pendingResults.filter((r) => r._id !== item._id);
+      const nextApproved = [approvedItem, ...approvedResults];
+      updateStateStores(nextApproved, nextPending);
+      await refreshResultsAndStats();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to approve result.";
+      setError(message);
+    } finally {
+      setApprovingIds((prev) => ({ ...prev, [item._id]: false }));
+    }
+  };
+
+  const handleDiscard = async (item: ResultItem) => {
+    if (!S.jobId) return;
+    setError("");
+    setDiscardingIds((prev) => ({ ...prev, [item._id]: true }));
+    try {
+      const response = await fetch(`${API_BASE}/jobs/${S.jobId}/results/${item._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ discarded: true }),
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to discard result.");
+      }
+      const nextPending = pendingResults.filter((r) => r._id !== item._id);
+      updateStateStores(approvedResults, nextPending);
+      await refreshResultsAndStats();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to discard result.";
+      setError(message);
+    } finally {
+      setDiscardingIds((prev) => ({ ...prev, [item._id]: false }));
+    }
+  };
+
+  const handleAddExample = async (item: ResultItem) => {
+    if (!S.jobId) return;
+    setError("");
+    setAddingExampleIds((prev) => ({ ...prev, [item._id]: true }));
+    try {
+      const response = await fetch(
+        `${API_BASE}/jobs/${S.jobId}/results/${item._id}/add-example`,
+        { method: "POST" }
+      );
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to add example.");
+      }
+      setAddedExampleIds((prev) => ({ ...prev, [item._id]: true }));
+      const nextCount = feedbackCount + 1;
+      setFeedbackCount(nextCount);
+      S.feedbackCount = nextCount;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to add example.";
+      setError(message);
+    } finally {
+      setAddingExampleIds((prev) => ({ ...prev, [item._id]: false }));
+    }
+  };
+
+  const handlePairChange = (itemId: string, field: string, value: string) => {
+    setEditedPairs((prev) => ({
+      ...prev,
+      [itemId]: {
+        ...(prev[itemId] || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleRerun = async () => {
+    if (!S.jobId) return;
+    setError("");
+    setIsRerunning(true);
+    try {
+      const response = await fetch(`${API_BASE}/jobs/${S.jobId}/generate`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to re-run generation.");
+      }
+      const data: GenerationResult = await response.json();
+      S.generationResult = data;
+      await refreshResultsAndStats();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to re-run generation.";
+      setError(message);
+    } finally {
+      setIsRerunning(false);
+    }
+  };
+
+  const approvedCount = stats?.approved ?? approvedResults.length;
+  const pendingCount = stats?.pending ?? pendingResults.length;
+
   return (
     <div className="space-y-4">
-      {showFeedback && (
+      {isLoading && (
+        <LFCard>
+          <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+            Loading results...
+          </p>
+        </LFCard>
+      )}
+
+      {error && (
+        <p style={{ color: "var(--error-red)", fontSize: "12px" }}>{error}</p>
+      )}
+
+      {feedbackCount > 0 && (
         <div
-          className="p-4 rounded-[6px] border flex items-start gap-3"
+          className="p-4 rounded-[6px] border flex items-center justify-between"
           style={{
-            backgroundColor: "#FFF4E6",
-            borderColor: "var(--warning-amber)",
+            backgroundColor: "var(--card-header)",
+            borderColor: "var(--border-color)",
           }}
         >
-          <AlertCircle className="w-5 h-5 mt-0.5" style={{ color: "var(--warning-amber)" }} />
-          <div className="flex-1">
-            <p style={{ fontSize: "14px", lineHeight: "1.6" }}>
-              <strong>1 item below threshold.</strong> Review and relabel if needed, or add as training
-              example and re-run generation for improved accuracy.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowFeedback(false)}
-            style={{ color: "var(--text-muted)" }}
-          >
-            ✕
-          </button>
+          <p style={{ fontSize: "13px", color: "var(--ink-dark)" }}>
+            You have added {feedbackCount} new examples. Re-run generation to improve low confidence results.
+          </p>
+          <LFButton onClick={handleRerun} disabled={isRerunning}>
+            {isRerunning ? "Re-running..." : "Re-run ?"}
+          </LFButton>
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
-        {/* Left Panel: Auto-Saved */}
-        <div>
-          <LFCard>
-            <div
-              className="mb-4 p-2 rounded-[6px]"
-              style={{ backgroundColor: "#D4F1E3" }}
-            >
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  color: "var(--success-green)",
-                }}
-              >
-                AUTO-SAVED ({mockAutoSaved.length})
-              </span>
-            </div>
-            <div className="space-y-3 max-h-[500px] overflow-y-auto">
-              {mockAutoSaved.map((item) => (
-                <div
-                  key={item.id}
-                  className="border rounded-[6px] p-3"
-                  style={{ borderColor: "var(--border-color)" }}
+      {!isLoading && (
+        <div className="grid grid-cols-2 gap-4">
+          {/* Left Column: Auto Approved */}
+          <div>
+            <LFCard>
+              <div className="mb-4 p-2 rounded-[6px]" style={{ backgroundColor: "#D4F1E3" }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    color: "var(--success-green)",
+                  }}
                 >
-                  <p
-                    className="mb-3"
-                    style={{ fontSize: "13px", lineHeight: "1.6" }}
+                  Auto Approved ({approvedCount})
+                </span>
+              </div>
+              <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                {approvedResults.length === 0 && (
+                  <div
+                    className="p-3 rounded-[8px] text-center"
+                    style={{ backgroundColor: "var(--card-header)", color: "var(--text-muted)", fontSize: "12px" }}
                   >
-                    {item.text}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <LFBadge color={item.labelColor}>{item.label}</LFBadge>
-                    <div className="flex-1 ml-3">
-                      <div
-                        className="h-1 rounded-full overflow-hidden"
-                        style={{ backgroundColor: "#E5E7EB" }}
-                      >
-                        <div
-                          className="h-full"
-                          style={{
-                            width: `${item.confidence * 100}%`,
-                            backgroundColor: "var(--success-green)",
-                          }}
-                        />
-                      </div>
-                      <span
-                        className="mt-1 block text-right"
-                        style={{
-                          fontFamily: "var(--font-mono)",
-                          fontSize: "10px",
-                          color: "var(--text-muted)",
-                        }}
-                      >
-                        {(item.confidence * 100).toFixed(0)}%
-                      </span>
-                    </div>
+                    No auto-approved results yet.
                   </div>
-                </div>
-              ))}
-            </div>
-          </LFCard>
-        </div>
-
-        {/* Right Panel: Human Review Required */}
-        <div>
-          <LFCard>
-            <div
-              className="mb-4 p-2 rounded-[6px]"
-              style={{ backgroundColor: "#FFE5E5" }}
-            >
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  color: "var(--error-red)",
-                }}
-              >
-                HUMAN REVIEW REQUIRED ({reviewItems.length})
-              </span>
-            </div>
-            <div className="space-y-3 max-h-[500px] overflow-y-auto">
-              {reviewItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="border rounded-[6px] p-3"
-                  style={{ borderColor: "var(--border-color)" }}
-                >
-                  <p
-                    className="mb-3"
-                    style={{ fontSize: "13px", lineHeight: "1.6" }}
+                )}
+                {approvedResults.map((item) => (
+                  <div
+                    key={item._id}
+                    className="border rounded-[6px] p-3"
+                    style={{ borderColor: "var(--border-color)" }}
                   >
-                    {item.text}
-                  </p>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <LFBadge color={item.labelColor}>{item.label}</LFBadge>
+                    <div className="space-y-2">
+                      {Object.entries(item.pair || {}).map(([field, value]) => (
+                        <div key={field} style={{ fontSize: "13px", lineHeight: "1.6" }}>
+                          <span
+                            style={{
+                              fontFamily: "var(--font-mono)",
+                              color: "var(--text-muted)",
+                              marginRight: "6px",
+                            }}
+                          >
+                            {field}:
+                          </span>
+                          <span>{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex items-center justify-between">
+                      <LFBadge color={item.source === "feedback" ? "teal" : item.source === "human" ? "green" : "blue"}>
+                        {item.source}
+                      </LFBadge>
                       <div className="flex-1 ml-3">
-                        <div
-                          className="h-1 rounded-full overflow-hidden"
-                          style={{ backgroundColor: "#E5E7EB" }}
-                        >
+                        <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: "#E5E7EB" }}>
                           <div
                             className="h-full"
                             style={{
-                              width: `${item.confidence * 100}%`,
-                              backgroundColor: "var(--error-red)",
+                              width: `${Math.round(item.confidence * 100)}%`,
+                              backgroundColor: "var(--success-green)",
                             }}
                           />
                         </div>
@@ -232,49 +322,129 @@ export function Step5Review() {
                         </span>
                       </div>
                     </div>
-                    {item.reasoning && (
-                      <p
-                        className="italic"
-                        style={{
-                          fontSize: "11px",
-                          color: "var(--text-muted)",
-                          lineHeight: "1.5",
-                        }}
-                      >
-                        {item.reasoning}
-                      </p>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      {mockLabels.map((label) => (
-                        <button
-                          key={label.name}
-                          onClick={() => handleRelabel(item.id, label)}
-                          className="px-3 py-1.5 rounded-[6px] border text-xs transition-all hover:opacity-80"
-                          style={{
-                            backgroundColor: `var(--label-${label.color})`,
-                            borderColor: `var(--label-${label.color}-border)`,
-                            fontFamily: "var(--font-mono)",
-                            fontSize: "11px",
-                            fontWeight: 500,
-                          }}
-                        >
-                          {label.name}
-                        </button>
-                      ))}
-                    </div>
-                    <LFButton variant="ghost" className="w-full text-xs">
-                      + add as example
-                    </LFButton>
                   </div>
-                </div>
-              ))}
-            </div>
-          </LFCard>
+                ))}
+              </div>
+            </LFCard>
+          </div>
+
+          {/* Right Column: Needs Review */}
+          <div>
+            <LFCard>
+              <div className="mb-4 p-2 rounded-[6px]" style={{ backgroundColor: "#FFE5E5" }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    color: "var(--error-red)",
+                  }}
+                >
+                  Needs Review ({pendingCount})
+                </span>
+              </div>
+              <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                {pendingResults.length === 0 && (
+                  <div
+                    className="p-3 rounded-[8px] text-center"
+                    style={{ backgroundColor: "var(--card-header)", color: "var(--text-muted)", fontSize: "12px" }}
+                  >
+                    No pending results.
+                  </div>
+                )}
+                {pendingResults.map((item) => (
+                  <div
+                    key={item._id}
+                    className="border rounded-[6px] p-3"
+                    style={{ borderColor: "var(--border-color)" }}
+                  >
+                    <div className="space-y-3">
+                      {Object.entries(item.pair || {}).map(([field, value]) => (
+                        <div key={field} className="space-y-1">
+                          <div
+                            style={{
+                              fontFamily: "var(--font-mono)",
+                              fontSize: "11px",
+                              color: "var(--text-muted)",
+                            }}
+                          >
+                            {field}
+                          </div>
+                          <textarea
+                            value={editedPairs[item._id]?.[field] ?? value}
+                            onChange={(event) => handlePairChange(item._id, field, event.target.value)}
+                            className="w-full rounded-[6px] border px-3 py-2"
+                            style={{
+                              borderColor: "var(--border-color)",
+                              fontSize: "12px",
+                              lineHeight: "1.6",
+                              minHeight: "60px",
+                              resize: "vertical",
+                            }}
+                          />
+                        </div>
+                      ))}
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: "#E5E7EB" }}>
+                            <div
+                              className="h-full"
+                              style={{
+                                width: `${Math.round(item.confidence * 100)}%`,
+                                backgroundColor: "var(--error-red)",
+                              }}
+                            />
+                          </div>
+                          <span
+                            className="mt-1 block text-right"
+                            style={{
+                              fontFamily: "var(--font-mono)",
+                              fontSize: "10px",
+                              color: "var(--text-muted)",
+                            }}
+                          >
+                            {(item.confidence * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <LFButton
+                          onClick={() => handleApprove(item)}
+                          disabled={approvingIds[item._id] || discardingIds[item._id] || addingExampleIds[item._id]}
+                        >
+                          {approvingIds[item._id] ? "Approving..." : "Approve"}
+                        </LFButton>
+                        <LFButton
+                          variant="ghost"
+                          onClick={() => handleDiscard(item)}
+                          disabled={approvingIds[item._id] || discardingIds[item._id] || addingExampleIds[item._id]}
+                        >
+                          {discardingIds[item._id] ? "Discarding..." : "Discard"}
+                        </LFButton>
+                        <LFButton
+                          variant="ghost"
+                          onClick={() => handleAddExample(item)}
+                          disabled={addedExampleIds[item._id] || addingExampleIds[item._id]}
+                        >
+                          {addingExampleIds[item._id] ? "Adding..." : "Add as Example"}
+                        </LFButton>
+                      </div>
+                      {addedExampleIds[item._id] && (
+                        <p style={{ fontSize: "11px", color: "var(--success-green)" }}>
+                          Added to examples
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </LFCard>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex justify-end pt-4">
-        <LFButton onClick={handleNext}>Proceed to Export →</LFButton>
+        <LFButton onClick={handleNext}>Export ?</LFButton>
       </div>
     </div>
   );
