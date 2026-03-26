@@ -10,3 +10,4 @@ db = client["labelforge"]
 
 jobs_col   = db["jobs"]
 chunks_col = db["chunks"]
+examples_col = db["examples"] 

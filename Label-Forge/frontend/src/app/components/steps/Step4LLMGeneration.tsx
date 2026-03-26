@@ -4,61 +4,37 @@ import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
 import { LFProgress } from "../ui/LFProgress";
 
-const mockPrompt = `You are a data labeling assistant. Given a text chunk, classify it into one of these categories:
-
-Examples:
-- "Machine learning models require high-quality labeled training data..." → Training Data
-- "Data annotation is a critical step in the ML pipeline..." → Annotation Process
-- "Fine-tuning large language models on domain-specific data..." → Model Performance
-
-Classify the following text:`;
-
-const mockLogs = [
-  { time: "14:32:01", type: "info", message: "Initializing LLM connection..." },
-  { time: "14:32:02", type: "info", message: "Loading few-shot examples..." },
-  { time: "14:32:03", type: "info", message: "Processing chunk_001..." },
-  { time: "14:32:04", type: "info", message: "Classified: Training Data (confidence: 0.92)" },
-  { time: "14:32:05", type: "info", message: "Processing chunk_002..." },
-  { time: "14:32:06", type: "info", message: "Classified: Annotation Process (confidence: 0.88)" },
-  { time: "14:32:07", type: "warning", message: "Low confidence on chunk_003 (0.73)" },
-  { time: "14:32:08", type: "info", message: "Processing chunk_004..." },
-  { time: "14:32:09", type: "info", message: "Classified: Quality Control (confidence: 0.91)" },
-  { time: "14:32:10", type: "info", message: "Processing chunk_005..." },
-  { time: "14:32:11", type: "info", message: "Classified: Annotation Process (confidence: 0.87)" },
-  { time: "14:32:12", type: "info", message: "Generation complete. 5 chunks processed." },
-];
+const totalChunks = 12;
 
 export function Step4LLMGeneration() {
   const navigate = useNavigate();
   const [progress, setProgress] = useState(0);
-  const [logs, setLogs] = useState<typeof mockLogs>([]);
+  const [currentChunk, setCurrentChunk] = useState(1);
   const [isComplete, setIsComplete] = useState(false);
 
   useEffect(() => {
-    let currentLog = 0;
     let isMounted = true;
+    let chunk = 1;
 
-    const addLog = () => {
+    const tick = () => {
       if (!isMounted) return;
-      
-      if (currentLog < mockLogs.length) {
-        const logToAdd = mockLogs[currentLog];
-        if (logToAdd) {
-          setLogs((prev) => [...prev, logToAdd]);
-          setProgress(((currentLog + 1) / mockLogs.length) * 100);
-          
-          if (currentLog === mockLogs.length - 1) {
-            setIsComplete(true);
-          }
-        }
-        
-        currentLog++;
-        setTimeout(addLog, 400);
+
+      const nextChunk = Math.min(chunk + 1, totalChunks);
+      chunk = nextChunk;
+      setCurrentChunk(nextChunk);
+      setProgress((nextChunk / totalChunks) * 100);
+
+      if (nextChunk >= totalChunks) {
+        setIsComplete(true);
+        return;
       }
+
+      setTimeout(tick, 450);
     };
 
-    setTimeout(addLog, 500);
-    
+    setProgress((chunk / totalChunks) * 100);
+    setTimeout(tick, 600);
+
     return () => {
       isMounted = false;
     };
@@ -68,66 +44,35 @@ export function Step4LLMGeneration() {
     navigate("/review");
   };
 
-  const getLogColor = (type: string) => {
-    switch (type) {
-      case "info":
-        return "#2DD4BF"; // teal
-      case "warning":
-        return "var(--warning-amber)";
-      case "error":
-        return "var(--error-red)";
-      default:
-        return "#2DD4BF";
-    }
-  };
-
   return (
     <div className="space-y-4">
-      <LFCard header="Few-Shot Prompt Preview">
-        <div
-          className="p-4 rounded-[6px] max-h-[200px] overflow-y-auto"
-          style={{ backgroundColor: "var(--ink-dark)" }}
-        >
-          <pre
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "12px",
-              color: "#2DD4BF",
-              lineHeight: "1.6",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {mockPrompt}
-          </pre>
-        </div>
-      </LFCard>
-
-      <LFCard>
-        <LFProgress value={progress} />
-      </LFCard>
-
-      <LFCard header="Generation Log">
-        <div
-          className="p-4 rounded-[6px] max-h-[300px] overflow-y-auto"
-          style={{ backgroundColor: "var(--ink-dark)" }}
-        >
-          <div className="space-y-1">
-            {logs.filter(log => log).map((log, index) => (
-              <div
-                key={index}
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "12px",
-                  lineHeight: "1.5",
-                }}
-              >
-                <span style={{ color: "#6B7280" }}>[{log.time}]</span>{" "}
-                <span style={{ color: getLogColor(log.type) }}>{log.message}</span>
-              </div>
-            ))}
+      {!isComplete && (
+        <LFCard>
+          <div className="flex flex-col items-center justify-center gap-4 py-6">
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "12px",
+                color: "var(--text-muted)",
+              }}
+            >
+              Extracting pairs from chunk {currentChunk} of {totalChunks}...
+            </div>
+            <div className="w-full max-w-[520px]">
+              <LFProgress value={progress} />
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: "12px",
+                color: "var(--ink-dark)",
+              }}
+            >
+              {Math.round(progress)}% complete
+            </div>
           </div>
-        </div>
-      </LFCard>
+        </LFCard>
+      )}
 
       {isComplete && (
         <>
@@ -151,7 +96,7 @@ export function Step4LLMGeneration() {
                     fontWeight: 600,
                   }}
                 >
-                  5
+                  48
                 </div>
               </div>
             </LFCard>
@@ -175,7 +120,7 @@ export function Step4LLMGeneration() {
                     color: "var(--success-green)",
                   }}
                 >
-                  4
+                  41
                 </div>
               </div>
             </LFCard>
@@ -199,7 +144,7 @@ export function Step4LLMGeneration() {
                     color: "var(--error-red)",
                   }}
                 >
-                  1
+                  7
                 </div>
               </div>
             </LFCard>

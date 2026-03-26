@@ -1,144 +1,602 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
-import { LFProgress } from "../ui/LFProgress";
-import { LFBadge, LabelColor } from "../ui/LFBadge";
+import { LFBadge } from "../ui/LFBadge";
+import { S, ChunkData, ExampleCreate } from "../../state";
 
-const mockLabels = [
-  { name: "Training Data", color: "blue" as LabelColor },
-  { name: "Model Performance", color: "green" as LabelColor },
-  { name: "Annotation Process", color: "red" as LabelColor },
-  { name: "Quality Control", color: "amber" as LabelColor },
-];
+const highlightColors = ["#dbeafe", "#dcfce7", "#fef9c3", "#f3e8ff"];
 
-const mockChunks = [
-  { id: "chunk_001", text: "Machine learning models require high-quality labeled training data to achieve optimal performance. The labeling process transforms raw, unstructured documents into structured datasets." },
-  { id: "chunk_002", text: "Data annotation is a critical step in the ML pipeline. Human annotators or automated systems classify, tag, or label data points according to predefined categories." },
-  { id: "chunk_003", text: "Fine-tuning large language models (LLMs) on domain-specific data can significantly improve their performance on specialized tasks through curated training examples." },
-  { id: "chunk_004", text: "Quality control in data labeling involves verifying accuracy, maintaining consistency across annotators, and resolving ambiguous cases through review processes." },
-  { id: "chunk_005", text: "Active learning strategies can reduce labeling costs by intelligently selecting the most informative samples for human annotation." },
-];
+type Assignment = {
+  field: string;
+  start: number;
+  end: number;
+  text: string;
+  color: string;
+};
+
+type SelectionState = {
+  start: number;
+  end: number;
+  text: string;
+  rect: DOMRect;
+};
+
+type SavedPair = {
+  id: string;
+  values: Record<string, string>;
+  example: ExampleCreate;
+};
+
+const getFieldColor = (index: number) => highlightColors[index % highlightColors.length];
 
 export function Step3Sample() {
   const navigate = useNavigate();
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [labeledExamples, setLabeledExamples] = useState<Array<{ chunk: string; label: string; color: LabelColor }>>([]);
+  const [fields, setFields] = useState<string[]>(S.jobData?.fields ?? []);
+  const [chunks, setChunks] = useState<ChunkData[]>(S.chunks ?? []);
+  const [currentIndex, setCurrentIndex] = useState(S.currentChunkIndex ?? 0);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [savedPairs, setSavedPairs] = useState<SavedPair[]>([]);
+  const [selection, setSelection] = useState<SelectionState | null>(null);
+  const selectionRef = useRef<SelectionState | null>(null);
+  const isTooltipInteraction = useRef(false);
 
-  const handleLabelClick = (label: { name: string; color: LabelColor }) => {
-    setLabeledExamples([
-      ...labeledExamples,
-      { chunk: mockChunks[currentIndex].text, label: label.name, color: label.color },
-    ]);
-    
-    if (currentIndex < mockChunks.length - 1) {
-      setCurrentIndex(currentIndex + 1);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  const API_BASE = "http://localhost:8001";
+
+  const textRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  const setSelectionState = (next: SelectionState | null) => {
+    selectionRef.current = next;
+    setSelection(next);
+  };
+
+  useEffect(() => {
+    setFields(S.jobData?.fields ?? []);
+    setChunks(S.chunks ?? []);
+    setCurrentIndex(S.currentChunkIndex ?? 0);
+    setSavedPairs(
+      (S.userExamples ?? []).map((example) => ({
+        id: `pair_${example.chunk_id}_${example.chunk_index}`,
+        values: example.pairs.reduce<Record<string, string>>((acc, pair) => {
+          acc[pair.field] = pair.text;
+          return acc;
+        }, {}),
+        example,
+      }))
+    );
+  }, []);
+
+  const currentChunk = chunks[currentIndex];
+  const minPairsRequired = 2;
+  const canGenerate = savedPairs.length >= minPairsRequired;
+
+  const clearCurrent = () => {
+    setAssignments([]);
+    setFieldValues({});
+    setSelectionState(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const handleNextChunk = async () => {
+    setError("");
+    setIsAdvancing(true);
+    try {
+      if (currentIndex < chunks.length - 1) {
+        const nextIndex = currentIndex + 1;
+        setCurrentIndex(nextIndex);
+        S.currentChunkIndex = nextIndex;
+      }
+      clearCurrent();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to advance chunk.";
+      setError(message);
+    } finally {
+      setIsAdvancing(false);
     }
   };
 
-  const handleSkip = () => {
-    if (currentIndex < mockChunks.length - 1) {
-      setCurrentIndex(currentIndex + 1);
+  const handleSavePair = async () => {
+    setError("");
+    setIsSaving(true);
+    try {
+      if (!currentChunk || fields.length === 0) {
+        setError("No chunk or fields available.");
+        return;
+      }
+
+      const hasAnyValue = fields.some((field) => fieldValues[field]);
+      if (!hasAnyValue) return;
+
+      const example: ExampleCreate = {
+        chunk_id: currentChunk._id,
+        chunk_index: currentChunk.chunk_index,
+        source_filename: currentChunk.source_filename,
+        pairs: fields.map((field) => ({
+          field,
+          text: fieldValues[field] || "",
+        })),
+      };
+
+      const newPair: SavedPair = {
+        id: `pair_${Date.now()}`,
+        values: { ...fieldValues },
+        example,
+      };
+
+      setSavedPairs((prev) => {
+        const updated = [...prev, newPair];
+        S.userExamples = updated.map((pair) => pair.example);
+        return updated;
+      });
+      clearCurrent();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to save pair.";
+      setError(message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleNext = () => {
-    navigate("/generate");
+  const handleClear = async () => {
+    setIsClearing(true);
+    try {
+      clearCurrent();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to clear selection.";
+      setError(message);
+    } finally {
+      setIsClearing(false);
+    }
   };
 
-  const progress = ((labeledExamples.length) / mockChunks.length) * 100;
-  const isComplete = labeledExamples.length >= 3; // Minimum 3 examples
+  const handleGenerate = async () => {
+    setError("");
+    if (!canGenerate || !S.jobId) return;
+
+    setIsGenerating(true);
+    try {
+      const response = await fetch(`${API_BASE}/jobs/${S.jobId}/examples`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ examples: S.userExamples }),
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to save examples.");
+      }
+
+      navigate("/generate");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to generate.";
+      setError(message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const removeSavedPair = async (id: string) => {
+    setRemovingId(id);
+    try {
+      setSavedPairs((prev) => {
+        const updated = prev.filter((pair) => pair.id !== id);
+        S.userExamples = updated.map((pair) => pair.example);
+        return updated;
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to remove pair.";
+      setError(message);
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
+  const getTextOffset = (container: HTMLElement, node: Node, offset: number) => {
+    const range = document.createRange();
+    range.setStart(container, 0);
+    range.setEnd(node, offset);
+    return range.toString().length;
+  };
+
+  const updateSelectionFromRange = (range: Range, selectionObj: Selection) => {
+    const container = textRef.current;
+    if (!container) return;
+    if (!container.contains(range.commonAncestorContainer)) {
+      setSelectionState(null);
+      return;
+    }
+
+    const selectedText = selectionObj.toString().trim();
+    if (!selectedText) {
+      setSelectionState(null);
+      return;
+    }
+
+    const start = getTextOffset(container, range.startContainer, range.startOffset);
+    const end = getTextOffset(container, range.endContainer, range.endOffset);
+    const normalizedStart = Math.min(start, end);
+    const normalizedEnd = Math.max(start, end);
+
+    if (normalizedEnd - normalizedStart < 2) {
+      setSelectionState(null);
+      return;
+    }
+
+    const rect = range.getBoundingClientRect();
+    const fallbackRect = range.getClientRects()[0];
+    const finalRect = rect.width === 0 && fallbackRect ? fallbackRect : rect;
+    if (!finalRect || (finalRect.width === 0 && finalRect.height === 0)) {
+      setSelectionState(null);
+      return;
+    }
+
+    setSelectionState({
+      start: normalizedStart,
+      end: normalizedEnd,
+      text: selectedText,
+      rect: finalRect,
+    });
+  };
+
+  const handleMouseUp = () => {
+    const selectionObj = window.getSelection();
+    if (!selectionObj || selectionObj.rangeCount === 0) {
+      setSelectionState(null);
+      return;
+    }
+    const range = selectionObj.getRangeAt(0);
+    updateSelectionFromRange(range, selectionObj);
+  };
+
+  const handleAssign = (field: string) => {
+    const activeSelection = selection ?? selectionRef.current;
+    if (!activeSelection) return;
+    const fieldIndex = fields.indexOf(field);
+    const color = getFieldColor(fieldIndex);
+
+    setAssignments((prev) => {
+      const updated = prev.filter((assignment) => assignment.field !== field);
+      updated.push({
+        field,
+        start: activeSelection.start,
+        end: activeSelection.end,
+        text: activeSelection.text,
+        color,
+      });
+      return updated.sort((a, b) => a.start - b.start);
+    });
+
+    setFieldValues((prev) => ({
+      ...prev,
+      [field]: activeSelection.text,
+    }));
+
+    setSelectionState(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const selectionObj = window.getSelection();
+      if (!selectionObj || selectionObj.rangeCount === 0 || selectionObj.isCollapsed) {
+        if (isTooltipInteraction.current) return;
+        setSelectionState(null);
+        return;
+      }
+      const range = selectionObj.getRangeAt(0);
+      updateSelectionFromRange(range, selectionObj);
+    };
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (tooltipRef.current?.contains(target)) return;
+      if (textRef.current?.contains(target)) return;
+      setSelectionState(null);
+    };
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => {
+      document.removeEventListener("selectionchange", handleSelectionChange);
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, []);
+
+  const annotatedNodes = useMemo(() => {
+    const text = currentChunk?.text || "";
+    if (assignments.length === 0) return text;
+
+    const sorted = assignments
+      .filter((assignment) => assignment.start >= 0 && assignment.end <= text.length)
+      .sort((a, b) => a.start - b.start);
+
+    const nodes: Array<string | JSX.Element> = [];
+    let cursor = 0;
+
+    sorted.forEach((assignment, index) => {
+      if (assignment.start < cursor) return;
+      if (assignment.start > cursor) {
+        nodes.push(text.slice(cursor, assignment.start));
+      }
+      nodes.push(
+        <span
+          key={`${assignment.field}-${assignment.start}-${index}`}
+          style={{
+            backgroundColor: assignment.color,
+            borderRadius: "6px",
+            padding: "0 4px",
+          }}
+        >
+          {text.slice(assignment.start, assignment.end)}
+        </span>
+      );
+      cursor = assignment.end;
+    });
+
+    if (cursor < text.length) {
+      nodes.push(text.slice(cursor));
+    }
+
+    return nodes;
+  }, [assignments, currentChunk?.text]);
+
+  if (!currentChunk) {
+    return (
+      <div className="space-y-4">
+        <LFCard>
+          <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+            No chunks available. Please return to extraction.
+          </p>
+        </LFCard>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
-      <LFCard>
-        <div className="space-y-3">
-          <LFProgress value={progress} />
-          <div
-            className="flex justify-between"
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "13px",
-              color: "var(--text-muted)",
-            }}
-          >
-            <span>{labeledExamples.length} labeled</span>
-            <span>{mockChunks.length - labeledExamples.length} remaining</span>
-          </div>
+      <div className="flex items-center justify-between">
+        <div
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border"
+          style={{
+            borderColor: "var(--border-color)",
+            backgroundColor: "var(--card-header)",
+            fontFamily: "var(--font-mono)",
+            fontSize: "12px",
+          }}
+        >
+          <span>Chunk {currentIndex + 1}</span>
+          <span style={{ color: "var(--text-muted)" }}>of {chunks.length}</span>
         </div>
-      </LFCard>
+        <div className="flex items-center gap-2">
+          <LFBadge color="amber">{savedPairs.length} pairs saved</LFBadge>
+          <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+            Minimum {minPairsRequired} required
+          </span>
+        </div>
+      </div>
 
-      {currentIndex < mockChunks.length && (
-        <LFCard>
-          <div className="space-y-4">
-            <div
-              className="p-4 rounded-[6px] border"
-              style={{ borderColor: "var(--border-color)" }}
-            >
-              <p style={{ fontSize: "14px", lineHeight: "1.7" }}>
-                {mockChunks[currentIndex].text}
-              </p>
-            </div>
-            <div
-              className="flex items-center justify-between gap-2 p-3 rounded-[6px]"
-              style={{ backgroundColor: "var(--card-header)" }}
-            >
-              <div className="flex gap-2 flex-wrap">
-                {mockLabels.map((label) => (
-                  <button
-                    key={label.name}
-                    onClick={() => handleLabelClick(label)}
-                    className="px-4 py-2 rounded-[6px] border transition-all hover:opacity-80"
-                    style={{
-                      backgroundColor: `var(--label-${label.color})`,
-                      borderColor: `var(--label-${label.color}-border)`,
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "12px",
-                      fontWeight: 500,
-                    }}
-                  >
-                    {label.name}
-                  </button>
-                ))}
-              </div>
-              <LFButton variant="ghost" onClick={handleSkip}>
-                Skip →
-              </LFButton>
-            </div>
-          </div>
-        </LFCard>
-      )}
-
-      {labeledExamples.length > 0 && (
-        <LFCard header="Labeled Examples">
-          <div className="space-y-2 max-h-[300px] overflow-y-auto">
-            {labeledExamples.map((example, index) => (
-              <div
-                key={index}
-                className="border rounded-[6px] p-3 flex items-start gap-3"
-                style={{ borderColor: "var(--border-color)" }}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        <LFCard className="lg:col-span-3">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "12px",
+                  color: "var(--text-muted)",
+                }}
               >
-                <LFBadge color={example.color}>{example.label}</LFBadge>
-                <p
-                  className="flex-1"
+                Field Legend:
+              </span>
+              {fields.map((field, index) => (
+                <div key={field} className="flex items-center gap-2">
+                  <span
+                    className="inline-block w-3 h-3 rounded-sm"
+                    style={{ backgroundColor: getFieldColor(index) }}
+                  />
+                  <span style={{ fontSize: "12px" }}>{field}</span>
+                </div>
+              ))}
+            </div>
+
+            <div
+              ref={textRef}
+              onMouseUp={handleMouseUp}
+              className="relative p-5 rounded-[10px] border"
+              style={{
+                borderColor: "var(--border-color)",
+                backgroundColor: "#ffffff",
+                minHeight: "360px",
+                lineHeight: "1.8",
+                fontSize: "15px",
+                userSelect: "text",
+                cursor: "text",
+              }}
+            >
+              {annotatedNodes}
+
+              {selection && (
+                <div
+                  ref={tooltipRef}
+                  className="fixed z-50"
+                  onMouseDown={() => {
+                    isTooltipInteraction.current = true;
+                  }}
+                  onMouseUp={() => {
+                    setTimeout(() => {
+                      isTooltipInteraction.current = false;
+                    }, 0);
+                  }}
                   style={{
-                    fontSize: "13px",
-                    color: "var(--text-muted)",
-                    lineHeight: "1.5",
+                    top: `${selection.rect.top - 8}px`,
+                    left: `${selection.rect.left + selection.rect.width / 2}px`,
+                    transform: "translate(-50%, -100%)",
                   }}
                 >
-                  {example.chunk.substring(0, 100)}...
-                </p>
-              </div>
-            ))}
+                  <div
+                    className="flex flex-wrap gap-2 px-3 py-2 rounded-[10px] border shadow-lg"
+                    style={{
+                      backgroundColor: "#ffffff",
+                      borderColor: "var(--border-color)",
+                    }}
+                  >
+                    {fields.map((field, index) => {
+                      const isFilled = Boolean(fieldValues[field]);
+                      return (
+                        <button
+                          key={field}
+                          onMouseDown={(event) => {
+                            event.preventDefault();
+                            handleAssign(field);
+                          }}
+                          className="px-3 py-1 rounded-full border text-xs font-medium transition-all hover:opacity-80"
+                          style={{
+                            borderColor: "var(--border-color)",
+                            backgroundColor: getFieldColor(index),
+                            fontFamily: "var(--font-mono)",
+                          }}
+                        >
+                          {isFilled ? `✓ ${field}` : field}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </LFCard>
-      )}
 
-      {isComplete && (
-        <div className="flex justify-end pt-4">
-          <LFButton onClick={handleNext}>Start LLM Generation →</LFButton>
-        </div>
+        <LFCard className="lg:col-span-2">
+          <div className="space-y-4">
+            <div className="space-y-3">
+              {fields.map((field, index) => (
+                <div
+                  key={field}
+                  className="border rounded-[10px] p-3"
+                  style={{ borderColor: "var(--border-color)" }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: "12px",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      {field}
+                    </span>
+                    <span
+                      className="inline-block w-3 h-3 rounded-sm"
+                      style={{ backgroundColor: getFieldColor(index) }}
+                    />
+                  </div>
+                  <div
+                    className="min-h-[54px] rounded-[8px] px-3 py-2"
+                    style={{
+                      backgroundColor: "var(--card-header)",
+                      fontSize: "13px",
+                      color: fieldValues[field] ? "var(--ink-dark)" : "var(--text-muted)",
+                    }}
+                  >
+                    {fieldValues[field] || "Highlight text to assign"}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <LFButton onClick={handleSavePair} disabled={isSaving}>
+                {isSaving ? "Saving..." : "Save Pair"}
+              </LFButton>
+              <LFButton variant="ghost" onClick={handleClear} disabled={isClearing}>
+                {isClearing ? "Clearing..." : "Clear"}
+              </LFButton>
+              <LFButton variant="ghost" onClick={handleNextChunk} disabled={isAdvancing}>
+                {isAdvancing ? "Loading..." : "Next Chunk →"}
+              </LFButton>
+            </div>
+
+            <LFButton onClick={handleGenerate} disabled={!canGenerate || isGenerating}>
+              {isGenerating ? "Generating..." : "Generate →"}
+            </LFButton>
+
+            <div className="border-t pt-4" style={{ borderColor: "var(--border-color)" }}>
+              <div className="flex items-center justify-between mb-3">
+                <span style={{ fontWeight: 600 }}>Saved Pairs</span>
+                <span
+                  className="px-2 py-1 rounded-full"
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "11px",
+                    backgroundColor: "var(--card-header)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  {savedPairs.length} pairs saved
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-[260px] overflow-y-auto">
+                {savedPairs.length === 0 && (
+                  <div
+                    className="p-3 rounded-[8px] text-center"
+                    style={{ backgroundColor: "var(--card-header)", color: "var(--text-muted)", fontSize: "12px" }}
+                  >
+                    No pairs saved yet.
+                  </div>
+                )}
+                {savedPairs.map((pair) => (
+                  <div
+                    key={pair.id}
+                    className="border rounded-[10px] p-3 space-y-2"
+                    style={{ borderColor: "var(--border-color)" }}
+                  >
+                    {fields.map((field) => (
+                      <div key={field} style={{ fontSize: "12px" }}>
+                        <span
+                          style={{
+                            fontFamily: "var(--font-mono)",
+                            color: "var(--text-muted)",
+                            marginRight: "6px",
+                          }}
+                        >
+                          {field}:
+                        </span>
+                        <span>{pair.values[field] || "—"}</span>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => removeSavedPair(pair.id)}
+                      className="text-xs font-medium"
+                      style={{ color: "var(--error-red)" }}
+                      disabled={removingId === pair.id}
+                    >
+                      {removingId === pair.id ? "Removing..." : "Remove"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </LFCard>
+      </div>
+
+      {error && (
+        <p style={{ color: "var(--error-red)", fontSize: "12px" }}>
+          {error}
+        </p>
       )}
     </div>
   );
