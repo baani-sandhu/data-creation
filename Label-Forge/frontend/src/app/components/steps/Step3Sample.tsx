@@ -76,7 +76,7 @@ export function Step3Sample() {
   }, []);
 
   const currentChunk = chunks[currentIndex];
-  const minPairsRequired = 2;
+  const minPairsRequired = 1;
   const canGenerate = savedPairs.length >= minPairsRequired;
 
   const clearCurrent = () => {
@@ -365,6 +365,19 @@ export function Step3Sample() {
 
   return (
     <div className="space-y-4">
+      <div
+        className="rounded-[12px] border px-4 py-3"
+        style={{
+          borderColor: "#f6c453",
+          backgroundColor: "#fffbeb",
+        }}
+      >
+        <p style={{ fontSize: "13px", color: "#92400e" }}>
+          Label all relevant training pairs from this chunk carefully. The pairs you create here are used as examples to
+          guide the AI in extracting pairs from the rest of your document. The more accurate and thorough you are here,
+          the better the results will be.
+        </p>
+      </div>
       <div className="flex items-center justify-between">
         <div
           className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border"
@@ -475,6 +488,9 @@ export function Step3Sample() {
                 </div>
               )}
             </div>
+            <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+              Try to label every extractable pair in this chunk before moving to Generate.
+            </p>
           </div>
         </LFCard>
 

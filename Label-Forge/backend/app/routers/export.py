@@ -1,0 +1,71 @@
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
+from app.database import jobs_col, results_col
+import json, csv, io
+
+router = APIRouter(prefix="/jobs", tags=["export"])
+
+
+@router.get("/{job_id}/export")
+async def export_dataset(job_id: str):
+    # load job to get output_format and fields
+    job = await jobs_col.find_one({"_id": job_id})
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    output_format = job.get("output_format", "jsonl")
+    fields = job["fields"]
+
+    # fetch all approved, non-discarded results
+    cursor = results_col.find({
+        "job_id": job_id,
+        "approved": True,
+        "discarded": {"$ne": True}
+    }).sort("chunk_index", 1)
+    results = await cursor.to_list(length=10000)
+
+    if not results:
+        raise HTTPException(400, "No approved results to export")
+
+    # extract only the pair fields in correct order
+    pairs = []
+    for r in results:
+        pair = {field: r["pair"].get(field, "") for field in fields}
+        pairs.append(pair)
+
+    # convert to requested format
+    if output_format == "json":
+        content = json.dumps(pairs, indent=2, ensure_ascii=False)
+        media_type = "application/json"
+        filename = f"labelforge_{job_id}.json"
+
+    elif output_format == "jsonl":
+        lines = [json.dumps(pair, ensure_ascii=False) for pair in pairs]
+        content = "\n".join(lines)
+        media_type = "application/x-ndjson"
+        filename = f"labelforge_{job_id}.jsonl"
+
+    elif output_format == "csv":
+        output = io.StringIO()
+        writer = csv.DictWriter(
+            output,
+            fieldnames=fields,
+            quoting=csv.QUOTE_ALL
+        )
+        writer.writeheader()
+        writer.writerows(pairs)
+        content = output.getvalue()
+        media_type = "text/csv"
+        filename = f"labelforge_{job_id}.csv"
+
+    else:
+        raise HTTPException(400, f"Unknown format: {output_format}")
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "X-Total-Pairs": str(len(pairs)),
+        }
+    )

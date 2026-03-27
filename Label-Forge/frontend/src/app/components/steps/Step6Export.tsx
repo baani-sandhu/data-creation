@@ -1,46 +1,76 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
 import { Download } from "lucide-react";
-
-const mockExportData = {
-  json: `{
-  "dataset": "ml_training_labels",
-  "version": "1.0",
-  "timestamp": "2026-03-24T14:32:12Z",
-  "items": [
-    {
-      "id": "chunk_001",
-      "text": "Machine learning models require high-quality labeled training data...",
-      "label": "Training Data",
-      "confidence": 0.92,
-      "source": "auto"
-    },
-    {
-      "id": "chunk_002",
-      "text": "Data annotation is a critical step in the ML pipeline...",
-      "label": "Annotation Process",
-      "confidence": 0.88,
-      "source": "auto"
-    }
-  ]
-}`,
-  csv: `id,text,label,confidence,source
-chunk_001,"Machine learning models require...",Training Data,0.92,auto
-chunk_002,"Data annotation is a critical step...",Annotation Process,0.88,auto
-chunk_003,"Fine-tuning large language models...",Model Performance,0.95,human
-chunk_004,"Quality control in data labeling...",Quality Control,0.91,auto`,
-  jsonl: `{"id":"chunk_001","text":"Machine learning models...","label":"Training Data","confidence":0.92}
-{"id":"chunk_002","text":"Data annotation is...","label":"Annotation Process","confidence":0.88}
-{"id":"chunk_003","text":"Fine-tuning large...","label":"Model Performance","confidence":0.95}`,
-};
+import { S, ResultItem } from "../../state";
 
 export function Step6Export() {
-  const [selectedFormat, setSelectedFormat] = useState<"json" | "csv" | "jsonl">("json");
+  const [previewResults, setPreviewResults] = useState<ResultItem[]>([]);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const outputFormat = (S.jobData?.output_format ?? "json").toLowerCase() as "json" | "csv" | "jsonl";
+  const downloadLabel = outputFormat === "jsonl" ? "Download JSONL" : `Download ${outputFormat.toUpperCase()}`;
 
-  const handleDownload = (format: "json" | "csv" | "jsonl") => {
-    // In a real app, this would trigger a file download
-    console.log(`Downloading ${format.toUpperCase()} format`);
+  const API_BASE = "http://localhost:8001";
+
+  useEffect(() => {
+    const fetchPreview = async () => {
+      setPreviewError("");
+      if (!S.jobId) {
+        setPreviewError("No job found. Please create a job first.");
+        return;
+      }
+
+      setIsPreviewLoading(true);
+      try {
+        const response = await fetch(`${API_BASE}/jobs/${S.jobId}/results?approved=true`);
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || "Failed to load preview.");
+        }
+        const data = await response.json();
+        const results: ResultItem[] = data.results || [];
+        setPreviewResults(results.slice(0, 5));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unable to load preview.";
+        setPreviewError(message);
+      } finally {
+        setIsPreviewLoading(false);
+      }
+    };
+
+    fetchPreview();
+  }, []);
+
+  const handleDownload = async () => {
+    setDownloadError("");
+    if (!S.jobId) {
+      setDownloadError("No job found. Please create a job first.");
+      return;
+    }
+
+    setIsDownloading(true);
+    try {
+      const response = await fetch(`${API_BASE}/jobs/${S.jobId}/export`);
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to download export.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `labelforge_dataset.${S.jobData?.output_format ?? outputFormat}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to download export.";
+      setDownloadError(message);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -144,97 +174,57 @@ export function Step6Export() {
       </div>
 
       <LFCard header="Export Preview">
-        <div className="mb-4 flex gap-2">
-          <button
-            onClick={() => setSelectedFormat("json")}
-            className="px-3 py-1.5 rounded-[6px] border transition-colors"
-            style={{
-              backgroundColor: selectedFormat === "json" ? "var(--primary-blue)" : "transparent",
-              borderColor: selectedFormat === "json" ? "var(--primary-blue)" : "var(--border-color)",
-              color: selectedFormat === "json" ? "white" : "var(--ink-dark)",
-              fontFamily: "var(--font-mono)",
-              fontSize: "11px",
-              fontWeight: 500,
-            }}
-          >
-            JSON
-          </button>
-          <button
-            onClick={() => setSelectedFormat("csv")}
-            className="px-3 py-1.5 rounded-[6px] border transition-colors"
-            style={{
-              backgroundColor: selectedFormat === "csv" ? "var(--primary-blue)" : "transparent",
-              borderColor: selectedFormat === "csv" ? "var(--primary-blue)" : "var(--border-color)",
-              color: selectedFormat === "csv" ? "white" : "var(--ink-dark)",
-              fontFamily: "var(--font-mono)",
-              fontSize: "11px",
-              fontWeight: 500,
-            }}
-          >
-            CSV
-          </button>
-          <button
-            onClick={() => setSelectedFormat("jsonl")}
-            className="px-3 py-1.5 rounded-[6px] border transition-colors"
-            style={{
-              backgroundColor: selectedFormat === "jsonl" ? "var(--primary-blue)" : "transparent",
-              borderColor: selectedFormat === "jsonl" ? "var(--primary-blue)" : "var(--border-color)",
-              color: selectedFormat === "jsonl" ? "white" : "var(--ink-dark)",
-              fontFamily: "var(--font-mono)",
-              fontSize: "11px",
-              fontWeight: 500,
-            }}
-          >
-            JSONL
-          </button>
-        </div>
         <div
           className="p-4 rounded-[6px] max-h-[400px] overflow-auto"
           style={{ backgroundColor: "var(--ink-dark)" }}
         >
-          <pre
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "12px",
-              color: "#2DD4BF",
-              lineHeight: "1.6",
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {mockExportData[selectedFormat]}
-          </pre>
+          {isPreviewLoading && (
+            <p style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "#93c5fd" }}>
+              Loading preview...
+            </p>
+          )}
+          {previewError && (
+            <p style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "#fca5a5" }}>
+              {previewError}
+            </p>
+          )}
+          {!isPreviewLoading && !previewError && previewResults.length === 0 && (
+            <p style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "#93c5fd" }}>
+              No approved results yet.
+            </p>
+          )}
+          {!isPreviewLoading && !previewError && previewResults.length > 0 && (
+            <div className="space-y-3">
+              {previewResults.map((item) => (
+                <div key={item._id} className="rounded-[6px] px-3 py-2" style={{ backgroundColor: "#0f172a" }}>
+                  {(S.jobData?.fields ?? Object.keys(item.pair)).map((field) => (
+                    <div key={`${item._id}-${field}`} style={{ fontSize: "12px", color: "#2DD4BF" }}>
+                      <span style={{ fontFamily: "var(--font-mono)", color: "#93c5fd", marginRight: "6px" }}>
+                        {field}:
+                      </span>
+                      <span>{item.pair[field] ?? "—"}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </LFCard>
 
-      <div className="flex gap-3 justify-end pt-4">
-        <LFButton
-          variant="secondary"
-          onClick={() => handleDownload("csv")}
-          className="flex items-center gap-2"
-        >
+      <div className="flex flex-col items-end gap-2 pt-4">
+        <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+          Export format: {outputFormat.toUpperCase()} (selected in setup)
+        </span>
+        <LFButton onClick={handleDownload} className="flex items-center gap-2" disabled={isDownloading}>
           <Download className="w-4 h-4" />
-          Download CSV
+          {isDownloading ? "Downloading..." : downloadLabel}
         </LFButton>
-        <LFButton
-          variant="secondary"
-          onClick={() => handleDownload("jsonl")}
-          className="flex items-center gap-2"
-          style={{
-            backgroundColor: "#E3EFFF",
-            borderColor: "var(--primary-blue)",
-            color: "var(--primary-blue)",
-          }}
-        >
-          <Download className="w-4 h-4" />
-          Download JSONL
-        </LFButton>
-        <LFButton
-          onClick={() => handleDownload("json")}
-          className="flex items-center gap-2"
-        >
-          <Download className="w-4 h-4" />
-          Download JSON
-        </LFButton>
+        {downloadError && (
+          <span style={{ fontSize: "12px", color: "var(--error-red)" }}>
+            {downloadError}
+          </span>
+        )}
       </div>
     </div>
   );

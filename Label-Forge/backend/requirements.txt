@@ -10,4 +10,4 @@ tiktoken
 httpx
 pytest
 pytest-asyncio
-google-generativeai
+google-genai

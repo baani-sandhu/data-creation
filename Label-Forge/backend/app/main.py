@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import jobs, examples, prompts, generation
+from app.routers import jobs, examples, prompts, generation, export
 
 app = FastAPI(title="LabelForge API")
 
@@ -15,6 +15,7 @@ app.include_router(jobs.router)
 app.include_router(examples.router) 
 app.include_router(prompts.router)
 app.include_router(generation.router)
+app.include_router(export.router)
 
 @app.get("/health")
 async def health():

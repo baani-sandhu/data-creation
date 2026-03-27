@@ -9,7 +9,6 @@ import uuid
 
 router = APIRouter(prefix="/jobs", tags=["generation"])
 
-
 @router.post("/{job_id}/generate")
 async def generate(job_id: str):
     # 1. load job
@@ -71,8 +70,10 @@ async def generate(job_id: str):
 
     for chunk in chunks_to_process:
         try:
+            print(f"Processing chunk {chunk['chunk_index']} - {len(chunk['text'].split())} words")
             user_message = build_user_message(chunk["text"], examples)
             pairs = extract_pairs(system_prompt, user_message)
+            print(f"Got {len(pairs)} pairs from chunk {chunk['chunk_index']}")
 
             for pair in pairs:
                 confidence = float(pair.pop("confidence", 0.0))
@@ -99,6 +100,7 @@ async def generate(job_id: str):
                 all_results.append(result_doc)
 
         except Exception as e:
+            print(f"ERROR on chunk {chunk['chunk_index']}: {str(e)}")
             errors.append({
                 "chunk_id": chunk["_id"],
                 "chunk_index": chunk["chunk_index"],
