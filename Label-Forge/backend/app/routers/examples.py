@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.database import jobs_col, examples_col
 from pydantic import BaseModel
 from datetime import datetime, timezone
+from app.auth import get_current_user, get_owned_job
 import uuid
 
 router = APIRouter(prefix="/jobs", tags=["examples"])
@@ -27,11 +28,9 @@ class ExampleBulkCreate(BaseModel):
     examples: list[ExampleCreate]
 
 @router.post("/{job_id}/examples")
-async def save_examples(job_id: str, body: ExampleBulkCreate):
+async def save_examples(job_id: str, body: ExampleBulkCreate, user: dict = Depends(get_current_user)):
     # verify job exists
-    job = await jobs_col.find_one({"_id": job_id})
-    if not job:
-        raise HTTPException(404, "Job not found")
+    job = await get_owned_job(job_id, user)
 
     if not body.examples:
         raise HTTPException(400, "No examples provided")
@@ -66,6 +65,7 @@ async def save_examples(job_id: str, body: ExampleBulkCreate):
         example_docs.append({
             "_id": str(uuid.uuid4()),
             "job_id": job_id,
+            "user_id": user["uid"],
             "chunk_id": example.chunk_id,
             "chunk_index": example.chunk_index,
             "source_filename": example.source_filename,
@@ -78,7 +78,7 @@ async def save_examples(job_id: str, body: ExampleBulkCreate):
 
     # update job status to labeling
     await jobs_col.update_one(
-        {"_id": job_id},
+        {"_id": job_id, "user_id": user["uid"]},
         {"$set": {
             "status": "labeling",
             "updated_at": now,
@@ -100,13 +100,11 @@ async def save_examples(job_id: str, body: ExampleBulkCreate):
     }
 
 @router.get("/{job_id}/examples")
-async def get_examples(job_id: str):
-    job = await jobs_col.find_one({"_id": job_id})
-    if not job:
-        raise HTTPException(404, "Job not found")
+async def get_examples(job_id: str, user: dict = Depends(get_current_user)):
+    await get_owned_job(job_id, user)
 
     cursor = examples_col.find(
-        {"job_id": job_id}
+        {"job_id": job_id, "user_id": user["uid"]}
     ).sort("created_at", 1)
 
     examples = await cursor.to_list(length=500)
@@ -120,10 +118,12 @@ async def get_examples(job_id: str):
     }
 
 @router.delete("/{job_id}/examples/{example_id}")
-async def delete_example(job_id: str, example_id: str):
+async def delete_example(job_id: str, example_id: str, user: dict = Depends(get_current_user)):
+    await get_owned_job(job_id, user)
     result = await examples_col.delete_one({
         "_id": example_id,
         "job_id": job_id,
+        "user_id": user["uid"],
     })
     if result.deleted_count == 0:
         raise HTTPException(404, "Example not found")

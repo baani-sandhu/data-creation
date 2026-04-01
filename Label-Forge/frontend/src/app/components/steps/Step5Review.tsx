@@ -4,6 +4,7 @@ import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
 import { LFBadge } from "../ui/LFBadge";
 import { S, ResultItem, GenerationResult } from "../../state";
+import { getIdToken } from "../../lib/auth";
 
 interface ResultsStats {
   total: number;
@@ -31,6 +32,14 @@ export function Step5Review() {
 
   const API_BASE = "http://localhost:8001";
 
+  const getAuthHeaders = async () => {
+    const token = await getIdToken();
+    if (!token) {
+      throw new Error("Please sign in to continue.");
+    }
+    return { Authorization: `Bearer ${token}` };
+  };
+
   const refreshResultsAndStats = async () => {
     setError("");
     if (!S.jobId) {
@@ -39,9 +48,10 @@ export function Step5Review() {
     }
 
     try {
+      const authHeaders = await getAuthHeaders();
       const [resultsResponse, statsResponse] = await Promise.all([
-        fetch(`${API_BASE}/jobs/${S.jobId}/results`),
-        fetch(`${API_BASE}/jobs/${S.jobId}/results/stats`),
+        fetch(`${API_BASE}/jobs/${S.jobId}/results`, { headers: authHeaders }),
+        fetch(`${API_BASE}/jobs/${S.jobId}/results/stats`, { headers: authHeaders }),
       ]);
 
       if (!resultsResponse.ok) {
@@ -103,9 +113,10 @@ export function Step5Review() {
     setApprovingIds((prev) => ({ ...prev, [item._id]: true }));
     try {
       const updatedPair = getEditedPair(item);
+      const authHeaders = await getAuthHeaders();
       const response = await fetch(`${API_BASE}/jobs/${S.jobId}/results/${item._id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ approved: true, pair: updatedPair }),
       });
       if (!response.ok) {
@@ -136,9 +147,10 @@ export function Step5Review() {
     setError("");
     setDiscardingIds((prev) => ({ ...prev, [item._id]: true }));
     try {
+      const authHeaders = await getAuthHeaders();
       const response = await fetch(`${API_BASE}/jobs/${S.jobId}/results/${item._id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ discarded: true }),
       });
       if (!response.ok) {
@@ -161,9 +173,10 @@ export function Step5Review() {
     setError("");
     setAddingExampleIds((prev) => ({ ...prev, [item._id]: true }));
     try {
+      const authHeaders = await getAuthHeaders();
       const response = await fetch(
         `${API_BASE}/jobs/${S.jobId}/results/${item._id}/add-example`,
-        { method: "POST" }
+        { method: "POST", headers: authHeaders }
       );
       if (!response.ok) {
         const message = await response.text();
@@ -196,8 +209,10 @@ export function Step5Review() {
     setError("");
     setIsRerunning(true);
     try {
+      const authHeaders = await getAuthHeaders();
       const response = await fetch(`${API_BASE}/jobs/${S.jobId}/generate`, {
         method: "POST",
+        headers: authHeaders,
       });
       if (!response.ok) {
         const message = await response.text();

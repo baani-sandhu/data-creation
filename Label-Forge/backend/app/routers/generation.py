@@ -1,23 +1,22 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from app.database import jobs_col, chunks_col, examples_col, results_col
 from app.services.prompt_builder import build_system_prompt, build_user_message
 from app.services.llm_service import extract_pairs
+from app.auth import get_current_user, get_owned_job
 from datetime import datetime, timezone
 import uuid
 
 router = APIRouter(prefix="/jobs", tags=["generation"])
 
 @router.post("/{job_id}/generate")
-async def generate(job_id: str):
+async def generate(job_id: str, user: dict = Depends(get_current_user)):
     # 1. load job
-    job = await jobs_col.find_one({"_id": job_id})
-    if not job:
-        raise HTTPException(404, "Job not found")
+    job = await get_owned_job(job_id, user)
 
     # 2. load human examples
-    examples_cursor = examples_col.find({"job_id": job_id}).sort("created_at", 1)
+    examples_cursor = examples_col.find({"job_id": job_id, "user_id": user["uid"]}).sort("created_at", 1)
     examples = await examples_cursor.to_list(length=500)
     if len(examples) < 2:
         raise HTTPException(400, "At least 2 labeled examples required before generating")
@@ -25,12 +24,12 @@ async def generate(job_id: str):
     # 3. load all chunks except the ones already manually labeled
     labeled_chunk_ids = set(e["chunk_id"] for e in examples)
     all_chunks_cursor = chunks_col.find(
-        {"job_id": job_id}
+        {"job_id": job_id, "user_id": user["uid"]}
     ).sort("chunk_index", 1)
     all_chunks = await all_chunks_cursor.to_list(length=500)
     # Also exclude chunks that already have approved results
     approved_results_cursor = results_col.find(
-        {"job_id": job_id, "approved": True}
+        {"job_id": job_id, "user_id": user["uid"], "approved": True}
     )
     approved_results = await approved_results_cursor.to_list(length=2000)
     approved_chunk_ids = set(r["chunk_id"] for r in approved_results)
@@ -48,13 +47,13 @@ async def generate(job_id: str):
 
     # 5. process each chunk
     existing_model_count = await results_col.count_documents(
-        {"job_id": job_id, "source": "model"}
+        {"job_id": job_id, "user_id": user["uid"], "source": "model"}
     )
     if existing_model_count == 0:
         run_number = 1
     else:
         max_run_doc = await results_col.find_one(
-            {"job_id": job_id, "source": "model", "run_number": {"$exists": True}},
+            {"job_id": job_id, "user_id": user["uid"], "source": "model", "run_number": {"$exists": True}},
             sort=[("run_number", -1)]
         )
         max_run_number = max_run_doc.get("run_number") if max_run_doc else None
@@ -64,7 +63,7 @@ async def generate(job_id: str):
     errors = []
 
     await jobs_col.update_one(
-        {"_id": job_id},
+        {"_id": job_id, "user_id": user["uid"]},
         {"$set": {"status": "generating", "updated_at": now}}
     )
 
@@ -83,6 +82,7 @@ async def generate(job_id: str):
                 result_doc = {
                     "_id": str(uuid.uuid4()),
                     "job_id": job_id,
+                    "user_id": user["uid"],
                     "chunk_id": chunk["_id"],
                     "chunk_index": chunk["chunk_index"],
                     "source_filename": chunk["source_filename"],
@@ -113,6 +113,7 @@ async def generate(job_id: str):
         result_doc = {
             "_id": str(uuid.uuid4()),
             "job_id": job_id,
+            "user_id": user["uid"],
             "chunk_id": ex["chunk_id"],
             "chunk_index": ex["chunk_index"],
             "source_filename": ex["source_filename"],
@@ -131,7 +132,7 @@ async def generate(job_id: str):
 
     # 7. save all results (remove previous unapproved model results)
     await results_col.delete_many(
-        {"job_id": job_id, "source": "model", "approved": False}
+        {"job_id": job_id, "user_id": user["uid"], "source": "model", "approved": False}
     )
     if all_results:
         await results_col.insert_many(all_results)
@@ -141,7 +142,7 @@ async def generate(job_id: str):
     low_conf = [r for r in all_results if not r["approved"]]
 
     await jobs_col.update_one(
-        {"_id": job_id},
+        {"_id": job_id, "user_id": user["uid"]},
         {"$set": {
             "status": "review",
             "updated_at": datetime.now(timezone.utc),
@@ -166,12 +167,11 @@ async def get_results(
     include_discarded: bool = False,
     approved: Optional[bool] = None,
     source: Optional[str] = None,
+    user: dict = Depends(get_current_user),
 ):
-    job = await jobs_col.find_one({"_id": job_id})
-    if not job:
-        raise HTTPException(404, "Job not found")
+    await get_owned_job(job_id, user)
 
-    query = {"job_id": job_id}
+    query = {"job_id": job_id, "user_id": user["uid"]}
     if not include_discarded:
         query["discarded"] = {"$ne": True}
     if approved is not None:
@@ -180,7 +180,7 @@ async def get_results(
         query["source"] = source
 
     cursor = results_col.find(query).sort("chunk_index", 1)
-    results = await cursor.to_list(length=2000)
+    results = await cursor.to_list(length=None)
     for r in results:
         r["_id"] = str(r["_id"])
 
@@ -192,34 +192,32 @@ async def get_results(
 
 
 @router.get("/{job_id}/results/stats")
-async def get_results_stats(job_id: str):
-    job = await jobs_col.find_one({"_id": job_id})
-    if not job:
-        raise HTTPException(404, "Job not found")
+async def get_results_stats(job_id: str, user: dict = Depends(get_current_user)):
+    await get_owned_job(job_id, user)
 
     total = await results_col.count_documents(
-        {"job_id": job_id, "discarded": {"$ne": True}}
+        {"job_id": job_id, "user_id": user["uid"], "discarded": {"$ne": True}}
     )
     approved = await results_col.count_documents(
-        {"job_id": job_id, "approved": True}
+        {"job_id": job_id, "user_id": user["uid"], "approved": True}
     )
     pending = await results_col.count_documents(
-        {"job_id": job_id, "approved": False, "discarded": {"$ne": True}}
+        {"job_id": job_id, "user_id": user["uid"], "approved": False, "discarded": {"$ne": True}}
     )
     discarded = await results_col.count_documents(
-        {"job_id": job_id, "discarded": True}
+        {"job_id": job_id, "user_id": user["uid"], "discarded": True}
     )
     human_reviewed = await results_col.count_documents(
-        {"job_id": job_id, "human_reviewed": True}
+        {"job_id": job_id, "user_id": user["uid"], "human_reviewed": True}
     )
 
-    run_numbers = await results_col.distinct("run_number", {"job_id": job_id})
+    run_numbers = await results_col.distinct("run_number", {"job_id": job_id, "user_id": user["uid"]})
     by_run = {}
     for run_number in run_numbers:
         if run_number is None:
             continue
         by_run[str(run_number)] = await results_col.count_documents(
-            {"job_id": job_id, "run_number": run_number}
+            {"job_id": job_id, "user_id": user["uid"], "run_number": run_number}
         )
 
     return {
@@ -241,20 +239,18 @@ class UpdateResultBody(BaseModel):
 
 
 @router.patch("/{job_id}/results/{result_id}")
-async def update_result(job_id: str, result_id: str, body: UpdateResultBody):
+async def update_result(job_id: str, result_id: str, body: UpdateResultBody, user: dict = Depends(get_current_user)):
     """
     Used in the review screen - human can approve, discard, or edit a low confidence pair.
     """
-    existing = await results_col.find_one({"_id": result_id, "job_id": job_id})
+    job = await get_owned_job(job_id, user)
+    existing = await results_col.find_one({"_id": result_id, "job_id": job_id, "user_id": user["uid"]})
     if not existing:
         raise HTTPException(404, "Result not found")
 
     update_data = {}
 
     if body.pair is not None:
-        job = await jobs_col.find_one({"_id": job_id})
-        if not job:
-            raise HTTPException(404, "Job not found")
         job_fields = set(job.get("fields", []))
         pair_fields = set(body.pair.keys())
         if pair_fields != job_fields:
@@ -272,11 +268,11 @@ async def update_result(job_id: str, result_id: str, body: UpdateResultBody):
     update_data["updated_at"] = datetime.now(timezone.utc)
 
     await results_col.update_one(
-        {"_id": result_id, "job_id": job_id},
+        {"_id": result_id, "job_id": job_id, "user_id": user["uid"]},
         {"$set": update_data}
     )
 
-    updated = await results_col.find_one({"_id": result_id, "job_id": job_id})
+    updated = await results_col.find_one({"_id": result_id, "job_id": job_id, "user_id": user["uid"]})
     if not updated:
         raise HTTPException(404, "Result not found")
     updated["_id"] = str(updated["_id"])
@@ -284,8 +280,9 @@ async def update_result(job_id: str, result_id: str, body: UpdateResultBody):
 
 
 @router.post("/{job_id}/results/{result_id}/add-example")
-async def add_example(job_id: str, result_id: str):
-    result = await results_col.find_one({"_id": result_id, "job_id": job_id})
+async def add_example(job_id: str, result_id: str, user: dict = Depends(get_current_user)):
+    await get_owned_job(job_id, user)
+    result = await results_col.find_one({"_id": result_id, "job_id": job_id, "user_id": user["uid"]})
     if not result:
         raise HTTPException(404, "Result not found")
 
@@ -293,7 +290,7 @@ async def add_example(job_id: str, result_id: str):
         raise HTTPException(400, "Result is discarded")
 
     existing_example = await examples_col.find_one(
-        {"job_id": job_id, "chunk_id": result["chunk_id"]}
+        {"job_id": job_id, "chunk_id": result["chunk_id"], "user_id": user["uid"]}
     )
     if existing_example:
         raise HTTPException(400, "Already added as example")
@@ -304,6 +301,7 @@ async def add_example(job_id: str, result_id: str):
         {
             "_id": new_id,
             "job_id": job_id,
+            "user_id": user["uid"],
             "chunk_id": result["chunk_id"],
             "chunk_index": result["chunk_index"],
             "source_filename": result["source_filename"],
@@ -314,7 +312,7 @@ async def add_example(job_id: str, result_id: str):
     )
 
     await results_col.update_one(
-        {"_id": result_id, "job_id": job_id},
+        {"_id": result_id, "job_id": job_id, "user_id": user["uid"]},
         {"$set": {"used_as_example": True}}
     )
 

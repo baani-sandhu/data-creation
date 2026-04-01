@@ -4,6 +4,7 @@ import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
 import { LFBadge } from "../ui/LFBadge";
 import { S, ChunkData, ExampleCreate } from "../../state";
+import { getIdToken } from "../../lib/auth";
 
 const highlightColors = ["#dbeafe", "#dcfce7", "#fef9c3", "#f3e8ff"];
 
@@ -37,14 +38,13 @@ export function Step3Sample() {
   const [currentIndex, setCurrentIndex] = useState(S.currentChunkIndex ?? 0);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
-  const [savedPairs, setSavedPairs] = useState<SavedPair[]>([]);
   const [selection, setSelection] = useState<SelectionState | null>(null);
+  const [jumpValue, setJumpValue] = useState(String((S.currentChunkIndex ?? 0) + 1));
   const selectionRef = useRef<SelectionState | null>(null);
   const isTooltipInteraction = useRef(false);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
-  const [isAdvancing, setIsAdvancing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -63,21 +63,31 @@ export function Step3Sample() {
     setFields(S.jobData?.fields ?? []);
     setChunks(S.chunks ?? []);
     setCurrentIndex(S.currentChunkIndex ?? 0);
-    setSavedPairs(
-      (S.userExamples ?? []).map((example) => ({
-        id: `pair_${example.chunk_id}_${example.chunk_index}`,
+    setJumpValue(String((S.currentChunkIndex ?? 0) + 1));
+  }, []);
+
+  const totalSavedPairs = S.userExamples.length;
+  const currentChunk = chunks[currentIndex];
+
+  const currentChunkPairs = useMemo<SavedPair[]>(() => {
+    if (!currentChunk) return [];
+    return (S.userExamples ?? [])
+      .filter((example) => example.chunk_index === currentChunk.chunk_index)
+      .map((example) => ({
+        id: `pair_${example.chunk_id}_${example.chunk_index}_${JSON.stringify(example.pairs)}`,
         values: example.pairs.reduce<Record<string, string>>((acc, pair) => {
           acc[pair.field] = pair.text;
           return acc;
         }, {}),
         example,
-      }))
-    );
-  }, []);
+      }));
+  }, [currentChunk, totalSavedPairs]);
 
-  const currentChunk = chunks[currentIndex];
-  const minPairsRequired = 1;
-  const canGenerate = savedPairs.length >= minPairsRequired;
+  const labeledChunkIndexes = useMemo(() => {
+    return new Set((S.userExamples ?? []).map((example) => example.chunk_index));
+  }, [totalSavedPairs]);
+
+  const canGenerate = totalSavedPairs >= 1;
 
   const clearCurrent = () => {
     setAssignments([]);
@@ -86,22 +96,41 @@ export function Step3Sample() {
     window.getSelection()?.removeAllRanges();
   };
 
-  const handleNextChunk = async () => {
+  const loadChunk = (nextIndex: number) => {
+    if (nextIndex < 0 || nextIndex >= chunks.length) return;
+    setCurrentIndex(nextIndex);
+    S.currentChunkIndex = nextIndex;
+    setJumpValue(String(nextIndex + 1));
+    clearCurrent();
     setError("");
-    setIsAdvancing(true);
-    try {
-      if (currentIndex < chunks.length - 1) {
-        const nextIndex = currentIndex + 1;
-        setCurrentIndex(nextIndex);
-        S.currentChunkIndex = nextIndex;
-      }
-      clearCurrent();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unable to advance chunk.";
-      setError(message);
-    } finally {
-      setIsAdvancing(false);
+  };
+
+  const handlePreviousChunk = () => {
+    if (currentIndex === 0) return;
+    loadChunk(currentIndex - 1);
+  };
+
+  const handleNextChunk = () => {
+    if (currentIndex >= chunks.length - 1) return;
+    loadChunk(currentIndex + 1);
+  };
+
+  const handleSkipChunk = () => {
+    handleNextChunk();
+  };
+
+  const handleJumpSubmit = () => {
+    const parsed = Number.parseInt(jumpValue, 10);
+    if (!Number.isFinite(parsed)) {
+      setJumpValue(String(currentIndex + 1));
+      return;
     }
+    const targetIndex = parsed - 1;
+    if (targetIndex < 0 || targetIndex >= chunks.length) {
+      setJumpValue(String(currentIndex + 1));
+      return;
+    }
+    loadChunk(targetIndex);
   };
 
   const handleSavePair = async () => {
@@ -126,17 +155,7 @@ export function Step3Sample() {
         })),
       };
 
-      const newPair: SavedPair = {
-        id: `pair_${Date.now()}`,
-        values: { ...fieldValues },
-        example,
-      };
-
-      setSavedPairs((prev) => {
-        const updated = [...prev, newPair];
-        S.userExamples = updated.map((pair) => pair.example);
-        return updated;
-      });
+      S.userExamples = [...S.userExamples, example];
       clearCurrent();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to save pair.";
@@ -164,11 +183,16 @@ export function Step3Sample() {
 
     setIsGenerating(true);
     try {
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Please sign in to save examples.");
+      }
       const response = await fetch(`${API_BASE}/jobs/${S.jobId}/examples`, {
-        method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
+        method: "POST",
         body: JSON.stringify({ examples: S.userExamples }),
       });
 
@@ -189,10 +213,9 @@ export function Step3Sample() {
   const removeSavedPair = async (id: string) => {
     setRemovingId(id);
     try {
-      setSavedPairs((prev) => {
-        const updated = prev.filter((pair) => pair.id !== id);
-        S.userExamples = updated.map((pair) => pair.example);
-        return updated;
+      S.userExamples = S.userExamples.filter((example) => {
+        const exampleId = `pair_${example.chunk_id}_${example.chunk_index}_${JSON.stringify(example.pairs)}`;
+        return exampleId !== id;
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to remove pair.";
@@ -305,13 +328,40 @@ export function Step3Sample() {
       setSelectionState(null);
     };
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName ?? "";
+      const isEditable = Boolean(
+        target?.closest("input, textarea, [contenteditable='true']")
+          || tagName === "INPUT"
+          || tagName === "TEXTAREA"
+      );
+      if (isEditable) return;
+
+      const activeSelection = window.getSelection();
+      if (activeSelection && !activeSelection.isCollapsed && activeSelection.toString().trim()) {
+        return;
+      }
+
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        handlePreviousChunk();
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        handleNextChunk();
+      }
+    };
+
     document.addEventListener("selectionchange", handleSelectionChange);
     document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("selectionchange", handleSelectionChange);
       document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [currentIndex, chunks.length]);
 
   const annotatedNodes = useMemo(() => {
     const text = currentChunk?.text || "";
@@ -373,11 +423,79 @@ export function Step3Sample() {
         }}
       >
         <p style={{ fontSize: "13px", color: "#92400e" }}>
-          Label all relevant training pairs from this chunk carefully. The pairs you create here are used as examples to
-          guide the AI in extracting pairs from the rest of your document. The more accurate and thorough you are here,
-          the better the results will be.
+          Label all relevant training pairs from any chunk you need. You can freely move around the document, save pairs chunk by chunk, and come back to previously labeled chunks at any time.
         </p>
       </div>
+
+      <div
+        className="rounded-[12px] border px-4 py-3"
+        style={{
+          borderColor: "var(--border-color)",
+          backgroundColor: "white",
+        }}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <LFButton variant="ghost" onClick={handlePreviousChunk} disabled={currentIndex === 0}>
+            ←
+          </LFButton>
+
+          <div className="flex items-center gap-3">
+            <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Chunk</span>
+            <input
+              value={jumpValue}
+              onChange={(event) => setJumpValue(event.target.value)}
+              onBlur={handleJumpSubmit}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  handleJumpSubmit();
+                }
+              }}
+              className="w-14 rounded-md border px-2 py-1 text-center"
+              style={{
+                borderColor: "var(--border-color)",
+                fontFamily: "var(--font-mono)",
+                fontSize: "13px",
+              }}
+            />
+            <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>of {chunks.length}</span>
+          </div>
+
+          <LFButton variant="ghost" onClick={handleNextChunk} disabled={currentIndex === chunks.length - 1}>
+            →
+          </LFButton>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          {chunks.map((chunk, index) => {
+            const isActive = index === currentIndex;
+            const isLabeled = labeledChunkIndexes.has(chunk.chunk_index);
+
+            return (
+              <button
+                key={chunk._id}
+                type="button"
+                onClick={() => loadChunk(index)}
+                className="relative rounded-full border px-3 py-1 text-xs transition-all"
+                style={{
+                  borderColor: isActive ? "var(--primary-blue)" : "var(--border-color)",
+                  backgroundColor: isActive ? "var(--label-blue)" : "white",
+                  color: isActive ? "var(--primary-blue)" : "var(--text-muted)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                {index + 1}
+                {isLabeled && (
+                  <span
+                    className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full"
+                    style={{ backgroundColor: "var(--success-green)" }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
         <div
           className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border"
@@ -392,9 +510,9 @@ export function Step3Sample() {
           <span style={{ color: "var(--text-muted)" }}>of {chunks.length}</span>
         </div>
         <div className="flex items-center gap-2">
-          <LFBadge color="amber">{savedPairs.length} pairs saved</LFBadge>
+          <LFBadge color="amber">Showing all {totalSavedPairs} pairs saved</LFBadge>
           <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-            Minimum {minPairsRequired} required
+            Current chunk: {currentChunkPairs.length} pairs
           </span>
         </div>
       </div>
@@ -489,7 +607,7 @@ export function Step3Sample() {
               )}
             </div>
             <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-              Try to label every extractable pair in this chunk before moving to Generate.
+              Navigate freely between chunks. Your saved pairs stay attached to the chunk they came from.
             </p>
           </div>
         </LFCard>
@@ -539,8 +657,8 @@ export function Step3Sample() {
               <LFButton variant="ghost" onClick={handleClear} disabled={isClearing}>
                 {isClearing ? "Clearing..." : "Clear"}
               </LFButton>
-              <LFButton variant="ghost" onClick={handleNextChunk} disabled={isAdvancing}>
-                {isAdvancing ? "Loading..." : "Next Chunk →"}
+              <LFButton variant="ghost" onClick={handleSkipChunk} disabled={currentIndex === chunks.length - 1}>
+                Skip chunk
               </LFButton>
             </div>
 
@@ -560,20 +678,20 @@ export function Step3Sample() {
                     color: "var(--text-muted)",
                   }}
                 >
-                  {savedPairs.length} pairs saved
+                  {currentChunkPairs.length} in this chunk
                 </span>
               </div>
 
               <div className="space-y-2 max-h-[260px] overflow-y-auto">
-                {savedPairs.length === 0 && (
+                {currentChunkPairs.length === 0 && (
                   <div
                     className="p-3 rounded-[8px] text-center"
                     style={{ backgroundColor: "var(--card-header)", color: "var(--text-muted)", fontSize: "12px" }}
                   >
-                    No pairs saved yet.
+                    No pairs saved for this chunk yet.
                   </div>
                 )}
-                {savedPairs.map((pair) => (
+                {currentChunkPairs.map((pair) => (
                   <div
                     key={pair.id}
                     className="border rounded-[10px] p-3 space-y-2"
@@ -590,7 +708,7 @@ export function Step3Sample() {
                         >
                           {field}:
                         </span>
-                        <span>{pair.values[field] || "—"}</span>
+                        <span>{pair.values[field] || "-"}</span>
                       </div>
                     ))}
                     <button

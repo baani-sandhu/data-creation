@@ -1,8 +1,9 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from typing import List
 from app.database import jobs_col, chunks_col
 from app.services.extractor import extract
 from app.services.chunker import chunk
+from app.auth import get_current_user, get_owned_job
 from datetime import datetime, timezone
 import uuid, aiofiles, os
 
@@ -15,6 +16,7 @@ MAX_FILE_SIZE = 50 * 1024 * 1024
 
 @router.post("/")
 async def create_job(
+    user: dict = Depends(get_current_user),
     files: List[UploadFile] = File(...),
     fields: str = Form(...),
     task_prompt: str = Form(...),
@@ -92,6 +94,7 @@ async def create_job(
         {
             "_id": str(uuid.uuid4()),
             "job_id": job_id,
+            "user_id": user["uid"],
             "chunk_index": i,
             "chunk_index_in_file": c["chunk_index_in_file"],
             "is_first_chunk": c["is_first_chunk"],
@@ -106,6 +109,7 @@ async def create_job(
 
     job_doc = {
         "_id": job_id,
+        "user_id": user["uid"],
         "status": "chunked",
         "fields": field_list,
         "task_prompt": task_prompt,
@@ -137,23 +141,46 @@ async def create_job(
         } if chunk_docs else None,
     }
 
+@router.get("/")
+async def list_jobs(user: dict = Depends(get_current_user)):
+    cursor = jobs_col.find(
+        {"user_id": user["uid"]},
+        {
+            "_id": 1,
+            "status": 1,
+            "files": 1,
+            "created_at": 1,
+            "chunk_count": 1,
+        },
+    ).sort("created_at", -1)
+
+    jobs = await cursor.to_list(length=200)
+    items = []
+    for job in jobs:
+        first_file = (job.get("files") or [{}])[0]
+        items.append({
+            "_id": str(job["_id"]),
+            "status": job.get("status"),
+            "source_filename": first_file.get("filename"),
+            "created_at": job.get("created_at"),
+            "chunk_count": job.get("chunk_count", 0),
+        })
+
+    return {"jobs": items}
+
 @router.get("/{job_id}")
-async def get_job(job_id: str):
-    job = await jobs_col.find_one({"_id": job_id})
-    if not job:
-        raise HTTPException(404, "Job not found")
+async def get_job(job_id: str, user: dict = Depends(get_current_user)):
+    job = await get_owned_job(job_id, user)
     job["_id"] = str(job["_id"])
     return job
 
 @router.get("/{job_id}/chunks")
-async def get_chunks(job_id: str, skip: int = 0, limit: int = 50):
-    job = await jobs_col.find_one({"_id": job_id})
-    if not job:
-        raise HTTPException(404, "Job not found")
+async def get_chunks(job_id: str, skip: int = 0, limit: int = 50, user: dict = Depends(get_current_user)):
+    await get_owned_job(job_id, user)
 
-    total = await chunks_col.count_documents({"job_id": job_id})
+    total = await chunks_col.count_documents({"job_id": job_id, "user_id": user["uid"]})
     cursor = chunks_col.find(
-        {"job_id": job_id}
+        {"job_id": job_id, "user_id": user["uid"]}
     ).sort("chunk_index", 1).skip(skip).limit(limit)
 
     chunks = await cursor.to_list(length=limit)

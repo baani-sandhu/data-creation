@@ -1,17 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import Response
-from app.database import jobs_col, results_col
+from app.database import results_col
+from app.auth import get_current_user, get_owned_job
 import json, csv, io
 
 router = APIRouter(prefix="/jobs", tags=["export"])
 
 
 @router.get("/{job_id}/export")
-async def export_dataset(job_id: str):
+async def export_dataset(job_id: str, user: dict = Depends(get_current_user)):
     # load job to get output_format and fields
-    job = await jobs_col.find_one({"_id": job_id})
-    if not job:
-        raise HTTPException(404, "Job not found")
+    job = await get_owned_job(job_id, user)
 
     output_format = job.get("output_format", "jsonl")
     fields = job["fields"]
@@ -19,10 +18,11 @@ async def export_dataset(job_id: str):
     # fetch all approved, non-discarded results
     cursor = results_col.find({
         "job_id": job_id,
+        "user_id": user["uid"],
         "approved": True,
         "discarded": {"$ne": True}
     }).sort("chunk_index", 1)
-    results = await cursor.to_list(length=10000)
+    results = await cursor.to_list(length=None)
 
     if not results:
         raise HTTPException(400, "No approved results to export")

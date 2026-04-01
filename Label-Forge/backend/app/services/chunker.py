@@ -1,4 +1,4 @@
-import re
+﻿import re
 
 def chunk(text: str, strategy: str = "auto", **kwargs) -> list[str]:
     strategies = {
@@ -13,39 +13,19 @@ def chunk(text: str, strategy: str = "auto", **kwargs) -> list[str]:
 
 def chunk_auto(
     text: str,
-    first_chunk_words: int = 500,
-    remaining_chunk_words: int = 4000,
+    chunk_words: int = 4000,
 ) -> list[str]:
-    """
-    First chunk is small so the user can comfortably read it
-    and manually annotate pairs from it.
-
-    Remaining chunks are large because they go straight to the
-    LLM — fewer chunks means fewer API calls.
-    """
     words = text.split()
-    total_words = len(words)
-
-    if total_words == 0:
+    if not words:
         return []
 
     chunks = []
-
-    # first chunk — small
-    first_words = words[:first_chunk_words]
-    first_chunk = " ".join(first_words).strip()
-    if first_chunk:
-        chunks.append(first_chunk)
-
-    # remaining chunks — large
-    remaining_words = words[first_chunk_words:]
     i = 0
-    while i < len(remaining_words):
-        chunk_words = remaining_words[i:i + remaining_chunk_words]
-        chunk_text = " ".join(chunk_words).strip()
+    while i < len(words):
+        chunk_text = " ".join(words[i:i + chunk_words]).strip()
         if chunk_text:
             chunks.append(chunk_text)
-        i += remaining_chunk_words
+        i += chunk_words
 
     return chunks
 

@@ -4,6 +4,7 @@ import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
 import { LFProgress } from "../ui/LFProgress";
 import { S, ChunkData } from "../../state";
+import { getIdToken } from "../../lib/auth";
 
 export function Step2Extract() {
   const navigate = useNavigate();
@@ -30,7 +31,13 @@ export function Step2Extract() {
       setProgress(40);
 
       try {
-        const response = await fetch(`${API_BASE}/jobs/${S.jobId}/chunks?limit=50`);
+        const token = await getIdToken();
+        if (!token) {
+          throw new Error("Please sign in to fetch chunks.");
+        }
+        const response = await fetch(`${API_BASE}/jobs/${S.jobId}/chunks?limit=50`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (!response.ok) {
           const message = await response.text();
           throw new Error(message || "Failed to load chunks.");

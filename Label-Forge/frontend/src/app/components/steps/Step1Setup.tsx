@@ -8,6 +8,7 @@ import { LFSelect } from "../ui/LFSelect";
 import { LFBadge, LabelColor } from "../ui/LFBadge";
 import { Upload, FileText, Tag, Settings } from "lucide-react";
 import { S } from "../../state";
+import { getIdToken } from "../../lib/auth";
 
 const labelColorOptions: LabelColor[] = ["blue", "green", "red", "amber", "purple", "teal", "indigo"];
 
@@ -65,9 +66,13 @@ export function Step1Setup() {
 
     setIsRefining(true);
     try {
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Please sign in to refine prompts.");
+      }
       const response = await fetch(`${API_BASE}/prompts/refine`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ prompt: taskDescription }),
       });
 
@@ -108,6 +113,10 @@ export function Step1Setup() {
 
     setIsSubmitting(true);
     try {
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Please sign in to create a job.");
+      }
       const formData = new FormData();
       S.uploadedFiles.forEach((file) => {
         formData.append("files", file);
@@ -119,6 +128,7 @@ export function Step1Setup() {
 
       const response = await fetch(`${API_BASE}/jobs/`, {
         method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
 

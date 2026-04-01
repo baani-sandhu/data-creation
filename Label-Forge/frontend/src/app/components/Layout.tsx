@@ -1,5 +1,8 @@
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { Check, Sparkles } from "lucide-react";
+import { LFButton } from "./ui/LFButton";
+import { useAuth } from "../lib/AuthContext";
+import { signOut } from "../lib/auth";
 
 const steps = [
   { number: 1, title: "Setup", path: "/", color: "#3B82F6" },
@@ -13,6 +16,7 @@ const steps = [
 export function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const currentStepIndex = steps.findIndex((step) => step.path === location.pathname);
   const currentStep = steps[currentStepIndex];
@@ -21,7 +25,7 @@ export function Layout() {
     <div className="min-h-screen" style={{ backgroundColor: "var(--base-bg)", fontFamily: "var(--font-sans)" }}>
       {/* Top Bar with gradient */}
       <div 
-        className="sticky top-0 z-50 h-[60px] flex items-center px-8 shadow-sm" 
+        className="sticky top-0 z-50 h-[60px] flex items-center px-8 shadow-sm justify-between" 
         style={{ 
           background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
         }}
@@ -38,6 +42,16 @@ export function Layout() {
               ML Training Data Pipeline
             </span>
           </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {user?.email && (
+            <span style={{ color: "white", fontSize: "12px", fontWeight: 500 }}>
+              {user.email}
+            </span>
+          )}
+          <LFButton variant="ghost" onClick={signOut}>
+            Sign Out
+          </LFButton>
         </div>
       </div>
 

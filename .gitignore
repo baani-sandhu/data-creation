@@ -85,3 +85,9 @@ pip-wheel-metadata/
 docs/_build/
 docs/build/
 site/
+
+
+# backend/.gitignore
+firebase_service_account.json
+.env
+uploads/

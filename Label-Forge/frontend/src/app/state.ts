@@ -64,6 +64,7 @@ export const S: {
   uploadedFiles: File[];
   generationResult: GenerationResult | null;
   results: ResultItem[];
+  exportResults: ResultItem[];
   approvedResults: ResultItem[];
   pendingResults: ResultItem[];
   feedbackCount: number;
@@ -76,7 +77,23 @@ export const S: {
   uploadedFiles: [],
   generationResult: null,
   results: [],
+  exportResults: [],
   approvedResults: [],
   pendingResults: [],
   feedbackCount: 0,
 };
+
+export function resetAppState() {
+  S.jobId = null;
+  S.jobData = null;
+  S.chunks = [];
+  S.currentChunkIndex = 0;
+  S.userExamples = [];
+  S.uploadedFiles = [];
+  S.generationResult = null;
+  S.results = [];
+  S.exportResults = [];
+  S.approvedResults = [];
+  S.pendingResults = [];
+  S.feedbackCount = 0;
+}

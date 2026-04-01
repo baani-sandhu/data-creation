@@ -1,48 +1,87 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
 import { S, GenerationResult } from "../../state";
+import { getIdToken } from "../../lib/auth";
+
+const MIN_EXAMPLES_ERROR = "At least 2 labeled examples required before generating";
+const MIN_EXAMPLES_MESSAGE = "You need at least 2 labeled pairs to run generation. Please go back and label more examples.";
 
 export function Step4LLMGeneration() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [needsMoreExamples, setNeedsMoreExamples] = useState(false);
   const [generationResult, setGenerationResult] = useState<GenerationResult | null>(
     S.generationResult ?? null
   );
 
   const API_BASE = "http://localhost:8001";
 
-  useEffect(() => {
-    const runGeneration = async () => {
-      setError("");
-      if (!S.jobId) {
-        setError("No job found. Please create a job first.");
-        setIsLoading(false);
-        return;
+  const extractErrorMessage = async (response: Response) => {
+    try {
+      const data = await response.json();
+      if (typeof data?.detail === "string") {
+        return data.detail;
       }
+    } catch {
+      // Fall through to text parsing.
+    }
 
-      setIsLoading(true);
-      try {
-        const response = await fetch(`${API_BASE}/jobs/${S.jobId}/generate`, {
-          method: "POST",
-        });
-        if (!response.ok) {
-          const message = await response.text();
-          throw new Error(message || "Failed to generate pairs.");
+    try {
+      const text = await response.text();
+      if (text) {
+        return text;
+      }
+    } catch {
+      // Ignore text parsing errors.
+    }
+
+    return "";
+  };
+
+  const runGeneration = async () => {
+    setError("");
+    setNeedsMoreExamples(false);
+    if (!S.jobId) {
+      setError("No job found. Please create a job first.");
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const token = await getIdToken();
+      if (!token) {
+        throw new Error("Please sign in to generate pairs.");
+      }
+      const response = await fetch(`${API_BASE}/jobs/${S.jobId}/generate`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const message = await extractErrorMessage(response);
+        if (response.status === 400 && message === MIN_EXAMPLES_ERROR) {
+          setNeedsMoreExamples(true);
+          setError(MIN_EXAMPLES_MESSAGE);
+          setGenerationResult(null);
+          return;
         }
-        const data: GenerationResult = await response.json();
-        S.generationResult = data;
-        setGenerationResult(data);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unable to generate pairs.";
-        setError(message);
-      } finally {
-        setIsLoading(false);
+        throw new Error(message || "Failed to generate pairs.");
       }
-    };
+      const data: GenerationResult = await response.json();
+      S.generationResult = data;
+      setGenerationResult(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to generate pairs.";
+      setError(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
     runGeneration();
   }, []);
 
@@ -51,35 +90,14 @@ export function Step4LLMGeneration() {
   };
 
   const handleRetry = () => {
-    if (isLoading) return;
+    if (isLoading || needsMoreExamples) return;
     setError("");
     setGenerationResult(null);
-    setIsLoading(true);
+    runGeneration();
+  };
 
-    const runRetry = async () => {
-      try {
-        if (!S.jobId) {
-          throw new Error("No job found. Please create a job first.");
-        }
-        const response = await fetch(`${API_BASE}/jobs/${S.jobId}/generate`, {
-          method: "POST",
-        });
-        if (!response.ok) {
-          const message = await response.text();
-          throw new Error(message || "Failed to generate pairs.");
-        }
-        const data: GenerationResult = await response.json();
-        S.generationResult = data;
-        setGenerationResult(data);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Unable to generate pairs.";
-        setError(message);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    runRetry();
+  const handleBackToLabeling = () => {
+    navigate("/sample");
   };
 
   return (
@@ -220,7 +238,7 @@ export function Step4LLMGeneration() {
                     fontWeight: 600,
                   }}
                 >
-                  {S.jobData?.confidence_threshold ?? "�"}
+                  {S.jobData?.confidence_threshold ?? "-"}
                 </div>
               </div>
             </LFCard>
@@ -228,7 +246,7 @@ export function Step4LLMGeneration() {
 
           <div className="flex justify-end pt-4">
             <LFButton onClick={handleNext} disabled={isLoading}>
-              Review Results ?
+              Review Results
             </LFButton>
           </div>
         </>
@@ -237,9 +255,15 @@ export function Step4LLMGeneration() {
       {!isLoading && error && (
         <div className="space-y-3">
           <p style={{ color: "var(--error-red)", fontSize: "12px" }}>{error}</p>
-          <LFButton onClick={handleRetry} disabled={isLoading}>
-            Retry
-          </LFButton>
+          {needsMoreExamples ? (
+            <LFButton onClick={handleBackToLabeling}>
+              ← Back to Labeling
+            </LFButton>
+          ) : (
+            <LFButton onClick={handleRetry} disabled={isLoading}>
+              Retry
+            </LFButton>
+          )}
         </div>
       )}
     </div>
