@@ -18,11 +18,10 @@ async def generate(job_id: str, user: dict = Depends(get_current_user)):
     # 2. load human examples
     examples_cursor = examples_col.find({"job_id": job_id, "user_id": user["uid"]}).sort("created_at", 1)
     examples = await examples_cursor.to_list(length=500)
-    if len(examples) < 2:
-        raise HTTPException(400, "At least 2 labeled examples required before generating")
+    if len(examples) < 1:
+        raise HTTPException(400, "At least 1 labeled example required before generating")
 
-    # 3. load all chunks except the ones already manually labeled
-    labeled_chunk_ids = set(e["chunk_id"] for e in examples)
+    # 3. load all chunks
     all_chunks_cursor = chunks_col.find(
         {"job_id": job_id, "user_id": user["uid"]}
     ).sort("chunk_index", 1)
@@ -36,7 +35,7 @@ async def generate(job_id: str, user: dict = Depends(get_current_user)):
 
     chunks_to_process = [
         c for c in all_chunks
-        if c["_id"] not in labeled_chunk_ids and c["_id"] not in approved_chunk_ids
+        if c["_id"] not in approved_chunk_ids
     ]
 
     if not chunks_to_process:
@@ -108,36 +107,14 @@ async def generate(job_id: str, user: dict = Depends(get_current_user)):
             })
             continue
 
-    # 6. also save the human examples as approved results
-    for ex in examples:
-        result_doc = {
-            "_id": str(uuid.uuid4()),
-            "job_id": job_id,
-            "user_id": user["uid"],
-            "chunk_id": ex["chunk_id"],
-            "chunk_index": ex["chunk_index"],
-            "source_filename": ex["source_filename"],
-            "pair": ex["pair"],
-            "confidence": 1.0,
-            "reasoning": "Human labeled example",
-            "source": "human",
-            "human_reviewed": True,
-            "approved": True,
-            "discarded": False,
-            "used_as_example": False,
-            "run_number": run_number,
-            "created_at": now,
-        }
-        all_results.append(result_doc)
-
-    # 7. save all results (remove previous unapproved model results)
+    # 6. save all results (remove previous unapproved model results)
     await results_col.delete_many(
         {"job_id": job_id, "user_id": user["uid"], "source": "model", "approved": False}
     )
     if all_results:
         await results_col.insert_many(all_results)
 
-    # 8. update job status
+    # 7. update job status
     high_conf = [r for r in all_results if r["approved"]]
     low_conf = [r for r in all_results if not r["approved"]]
 
