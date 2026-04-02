@@ -1,5 +1,6 @@
 import { createBrowserRouter } from "react-router";
 import { Layout } from "./components/Layout";
+import { Dashboard } from "./components/Dashboard";
 import { Step1Setup } from "./components/steps/Step1Setup";
 import { Step2Extract } from "./components/steps/Step2Extract";
 import { Step3Sample } from "./components/steps/Step3Sample";
@@ -10,6 +11,10 @@ import { Step6Export } from "./components/steps/Step6Export";
 export const router = createBrowserRouter([
   {
     path: "/",
+    Component: Dashboard,
+  },
+  {
+    path: "/wizard",
     Component: Layout,
     children: [
       { index: true, Component: Step1Setup },

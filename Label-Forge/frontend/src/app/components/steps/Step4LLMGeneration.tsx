@@ -86,7 +86,7 @@ export function Step4LLMGeneration() {
   }, []);
 
   const handleNext = () => {
-    navigate("/review");
+    navigate("/wizard/review");
   };
 
   const handleRetry = () => {
@@ -97,7 +97,7 @@ export function Step4LLMGeneration() {
   };
 
   const handleBackToLabeling = () => {
-    navigate("/sample");
+    navigate("/wizard/sample");
   };
 
   return (

@@ -63,7 +63,7 @@ export function Step2Extract() {
   const handleNext = async () => {
     setIsContinuing(true);
     try {
-      navigate("/sample");
+      navigate("/wizard/sample");
     } catch {
       setError("Unable to proceed to sampling.");
     } finally {
@@ -106,7 +106,7 @@ export function Step2Extract() {
                   }}
                 >
                   <span>
-                    Chunk {chunk.chunk_index + 1} · {chunk.source_filename}
+                    Chunk {chunk.chunk_index + 1} ï¿½ {chunk.source_filename}
                   </span>
                   <span>{chunk.word_count} words</span>
                 </div>

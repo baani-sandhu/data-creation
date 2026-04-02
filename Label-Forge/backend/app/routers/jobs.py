@@ -1,11 +1,11 @@
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from typing import List
-from app.database import jobs_col, chunks_col
+from app.database import jobs_col, chunks_col, results_col, examples_col
 from app.services.extractor import extract
 from app.services.chunker import chunk
 from app.auth import get_current_user, get_owned_job
 from datetime import datetime, timezone
-import uuid, aiofiles, os
+import uuid, aiofiles, os, asyncio
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 UPLOAD_DIR = "uploads"
@@ -143,30 +143,59 @@ async def create_job(
 
 @router.get("/")
 async def list_jobs(user: dict = Depends(get_current_user)):
-    cursor = jobs_col.find(
-        {"user_id": user["uid"]},
-        {
-            "_id": 1,
-            "status": 1,
-            "files": 1,
-            "created_at": 1,
-            "chunk_count": 1,
-        },
-    ).sort("created_at", -1)
-
+    cursor = jobs_col.find({"user_id": user["uid"]}).sort("created_at", -1)
     jobs = await cursor.to_list(length=200)
-    items = []
-    for job in jobs:
-        first_file = (job.get("files") or [{}])[0]
-        items.append({
+
+    async def get_counts(job):
+        job_id = str(job["_id"])
+        pair_count = await results_col.count_documents({"job_id": job_id, "approved": True, "discarded": {"$ne": True}})
+        pending_count = await results_col.count_documents({"job_id": job_id, "approved": False, "discarded": {"$ne": True}})
+        example_count = await examples_col.count_documents({"job_id": job_id})
+        return pair_count, pending_count, example_count
+
+    tasks = [get_counts(job) for job in jobs]
+    counts_results = await asyncio.gather(*tasks)
+
+    enriched_jobs = []
+    total_pairs = 0
+    in_review = 0
+    completed = 0
+
+    for i, job in enumerate(jobs):
+        pair_count, pending_count, example_count = counts_results[i]
+        total_pairs += pair_count
+        if job.get("status") == "review":
+            in_review += 1
+        elif job.get("status") == "done":
+            completed += 1
+
+        files = job.get("files", [])
+        if files:
+            primary_filename = files[0].get("filename")
+        else:
+            primary_filename = job.get("source_filename")
+
+        enriched_jobs.append({
             "_id": str(job["_id"]),
             "status": job.get("status"),
-            "source_filename": first_file.get("filename"),
             "created_at": job.get("created_at"),
             "chunk_count": job.get("chunk_count", 0),
+            "pair_count": pair_count,
+            "pending_count": pending_count,
+            "example_count": example_count,
+            "primary_filename": primary_filename,
+            "fields": job.get("fields", []),
+            "files": job.get("files", []),
         })
 
-    return {"jobs": items}
+    stats = {
+        "total_jobs": len(jobs),
+        "total_pairs": total_pairs,
+        "in_review": in_review,
+        "completed": completed,
+    }
+
+    return {"jobs": enriched_jobs, "stats": stats}
 
 @router.get("/{job_id}")
 async def get_job(job_id: str, user: dict = Depends(get_current_user)):
@@ -194,3 +223,19 @@ async def get_chunks(job_id: str, skip: int = 0, limit: int = 50, user: dict = D
         "limit": limit,
         "chunks": chunks,
     }
+
+@router.delete("/{job_id}")
+async def delete_job(job_id: str, user: dict = Depends(get_current_user)):
+    job = await get_owned_job(job_id, user)
+    
+    await results_col.delete_many({"job_id": job_id})
+    await examples_col.delete_many({"job_id": job_id})
+    await chunks_col.delete_many({"job_id": job_id})
+    await jobs_col.delete_one({"_id": job_id})
+    
+    for file_info in job.get("files", []):
+        file_path = file_info.get("file_path")
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+    
+    return {"deleted": job_id}

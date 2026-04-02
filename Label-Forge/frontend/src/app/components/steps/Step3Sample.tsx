@@ -201,7 +201,7 @@ export function Step3Sample() {
         throw new Error(message || "Failed to save examples.");
       }
 
-      navigate("/generate");
+      navigate("/wizard/generate");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to generate.";
       setError(message);

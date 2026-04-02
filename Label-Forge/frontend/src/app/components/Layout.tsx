@@ -1,16 +1,16 @@
 import { Outlet, useLocation, useNavigate } from "react-router";
-import { Check, Sparkles } from "lucide-react";
+import { Check, Sparkles, ArrowLeft } from "lucide-react";
 import { LFButton } from "./ui/LFButton";
 import { useAuth } from "../lib/AuthContext";
 import { signOut } from "../lib/auth";
 
 const steps = [
-  { number: 1, title: "Setup", path: "/", color: "#3B82F6" },
-  { number: 2, title: "Extract & Chunk", path: "/extract", color: "#8B5CF6" },
-  { number: 3, title: "Sample Labeling", path: "/sample", color: "#14B8A6" },
-  { number: 4, title: "LLM Generation", path: "/generate", color: "#F59E0B" },
-  { number: 5, title: "Review & Route", path: "/review", color: "#EF4444" },
-  { number: 6, title: "Export", path: "/export", color: "#10B981" },
+  { number: 1, title: "Setup", path: "/wizard", color: "#3B82F6" },
+  { number: 2, title: "Extract & Chunk", path: "/wizard/extract", color: "#8B5CF6" },
+  { number: 3, title: "Sample Labeling", path: "/wizard/sample", color: "#14B8A6" },
+  { number: 4, title: "LLM Generation", path: "/wizard/generate", color: "#F59E0B" },
+  { number: 5, title: "Review & Route", path: "/wizard/review", color: "#EF4444" },
+  { number: 6, title: "Export", path: "/wizard/export", color: "#10B981" },
 ];
 
 export function Layout() {
@@ -31,6 +31,10 @@ export function Layout() {
         }}
       >
         <div className="flex items-center gap-3">
+          <LFButton variant="ghost" onClick={() => navigate("/")} className="flex items-center gap-2">
+            <ArrowLeft className="w-4 h-4" />
+            My Datasets
+          </LFButton>
           <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--gradient-primary)" }}>
             <Sparkles className="w-5 h-5 text-white" />
           </div>

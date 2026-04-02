@@ -91,7 +91,7 @@ export function Step5Review() {
   }, []);
 
   const handleNext = () => {
-    navigate("/export");
+    navigate("/wizard/export");
   };
 
   const updateStateStores = (nextApproved: ResultItem[], nextPending: ResultItem[]) => {

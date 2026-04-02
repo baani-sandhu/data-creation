@@ -144,7 +144,7 @@ export function Step1Setup() {
       S.currentChunkIndex = 0;
       S.userExamples = [];
 
-      navigate("/extract");
+      navigate("/wizard/extract");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unexpected error creating job.";
       setError(message);

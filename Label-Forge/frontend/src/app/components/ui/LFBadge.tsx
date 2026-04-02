@@ -5,9 +5,12 @@ const labelColors = {
   green: { bg: "var(--label-green)", border: "var(--label-green-border)" },
   red: { bg: "var(--label-red)", border: "var(--label-red-border)" },
   amber: { bg: "var(--label-amber)", border: "var(--label-amber-border)" },
+  orange: { bg: "var(--label-amber)", border: "var(--label-amber-border)" },
   purple: { bg: "var(--label-purple)", border: "var(--label-purple-border)" },
   teal: { bg: "var(--label-teal)", border: "var(--label-teal-border)" },
   indigo: { bg: "var(--label-indigo)", border: "var(--label-indigo-border)" },
+  gray: { bg: "#f0ede6", border: "#d8d3c8" },
+  default: { bg: "#f0ede6", color: "#5a5750", border: "#d8d3c8" },
 };
 
 export type LabelColor = keyof typeof labelColors;
@@ -19,7 +22,7 @@ interface LFBadgeProps {
 }
 
 export function LFBadge({ children, color, onRemove }: LFBadgeProps) {
-  const colors = labelColors[color];
+  const colors = labelColors[color] ?? labelColors.default;
   
   return (
     <span
@@ -27,6 +30,7 @@ export function LFBadge({ children, color, onRemove }: LFBadgeProps) {
       style={{
         backgroundColor: colors.bg,
         borderColor: colors.border,
+        color: colors.color,
         fontFamily: "var(--font-mono)",
         fontSize: "11px",
         fontWeight: 600,
