@@ -1,9 +1,11 @@
-﻿import re
+import re
+import tiktoken
+
 
 def chunk(text: str, strategy: str = "auto", **kwargs) -> list[str]:
     strategies = {
-        "auto":            chunk_auto,
-        "paragraph":       chunk_by_paragraph,
+        "auto": chunk_auto,
+        "paragraph": chunk_by_paragraph,
         "sentence_window": chunk_by_sentence_window,
     }
     if strategy not in strategies:
@@ -13,19 +15,28 @@ def chunk(text: str, strategy: str = "auto", **kwargs) -> list[str]:
 
 def chunk_auto(
     text: str,
-    chunk_words: int = 4000,
+    max_tokens: int = 20000,
 ) -> list[str]:
-    words = text.split()
-    if not words:
+    """
+    Splits text into chunks based on token count.
+    Default 20000 tokens ~= ~15000 words per chunk.
+    Well within Gemini 2.5 Flash's 1M token limit.
+    """
+    encoding = tiktoken.get_encoding("cl100k_base")
+    tokens = encoding.encode(text)
+    total_tokens = len(tokens)
+
+    if not total_tokens:
         return []
 
     chunks = []
     i = 0
-    while i < len(words):
-        chunk_text = " ".join(words[i:i + chunk_words]).strip()
-        if chunk_text:
+    while i < total_tokens:
+        chunk_tokens = tokens[i:i + max_tokens]
+        chunk_text = encoding.decode(chunk_tokens)
+        if chunk_text.strip():
             chunks.append(chunk_text)
-        i += chunk_words
+        i += max_tokens
 
     return chunks
 
@@ -35,7 +46,7 @@ def chunk_by_paragraph(
     min_len: int = 60,
     max_len: int = 500,
 ) -> list[str]:
-    raw_paras = [p.strip() for p in re.split(r'\n{2,}', text)]
+    raw_paras = [p.strip() for p in re.split(r"\n{2,}", text)]
     chunks = []
     for para in raw_paras:
         if len(para) < min_len:
@@ -53,7 +64,7 @@ def chunk_by_sentence_window(
     overlap: int = 1,
     min_len: int = 60,
 ) -> list[str]:
-    sentences = re.split(r'(?<=[.!?])\s+', text)
+    sentences = re.split(r"(?<=[.!?])\s+", text)
     sentences = [s.strip() for s in sentences if len(s.strip()) > 10]
     chunks = []
     i = 0
@@ -67,7 +78,7 @@ def chunk_by_sentence_window(
 
 
 def _split_by_sentence(text: str, max_len: int) -> list[str]:
-    sentences = re.split(r'(?<=[.!?])\s+', text)
+    sentences = re.split(r"(?<=[.!?])\s+", text)
     chunks = []
     buffer = ""
     for sentence in sentences:

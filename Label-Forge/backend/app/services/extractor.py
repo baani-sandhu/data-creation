@@ -13,13 +13,9 @@ def extract(file_bytes: bytes, file_ext: str) -> str:
         raise ValueError(f"Unsupported file type: .{file_ext}")
 
 def _extract_pdf(file_bytes: bytes) -> str:
-    # try pdfplumber first
-    text = _try_pdfplumber(file_bytes)
-
-    # if it returned nothing, fall back to pymupdf
+    text = _try_pymupdf(file_bytes)
     if not text.strip():
-        text = _try_pymupdf(file_bytes)
-
+        text = _try_pdfplumber(file_bytes)
     return text
 
 def _try_pdfplumber(file_bytes: bytes) -> str:
@@ -33,12 +29,16 @@ def _try_pdfplumber(file_bytes: bytes) -> str:
 
 def _try_pymupdf(file_bytes: bytes) -> str:
     doc = fitz.open(stream=file_bytes, filetype="pdf")
-    pages = []
-    for page in doc:
-        t = page.get_text()
-        if t.strip():
-            pages.append(t.strip())
-    return "\n\n".join(pages)
+    try:
+        pages = []
+        for page_index in range(doc.page_count):
+            t = doc.load_page(page_index).get_text()
+            if t.strip():
+                pages.append(t.strip())
+
+        return "\n\n".join(pages)
+    finally:
+        doc.close()
 
 def _extract_text(file_bytes: bytes) -> str:
     return file_bytes.decode("utf-8", errors="ignore")
