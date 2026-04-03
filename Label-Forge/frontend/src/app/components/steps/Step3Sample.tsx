@@ -210,6 +210,12 @@ export function Step3Sample() {
     }
   };
 
+  const handleSkipLabeling = () => {
+    setError("");
+    if (!S.jobId) return;
+    navigate("/wizard/generate");
+  };
+
   const removeSavedPair = async (id: string) => {
     setRemovingId(id);
     try {
@@ -662,9 +668,19 @@ export function Step3Sample() {
               </LFButton>
             </div>
 
-            <LFButton onClick={handleGenerate} disabled={!canGenerate || isGenerating}>
-              {isGenerating ? "Generating..." : "Generate →"}
-            </LFButton>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <LFButton onClick={handleGenerate} disabled={!canGenerate || isGenerating}>
+                  {isGenerating ? "Generating..." : "Generate →"}
+                </LFButton>
+                <LFButton variant="ghost" onClick={handleSkipLabeling} disabled={isGenerating || !S.jobId}>
+                  Skip Labeling →
+                </LFButton>
+              </div>
+              <p style={{ fontSize: "12px", color: "#92400e" }}>
+                Skipping labeling uses a zero-shot prompt. Results may be less accurate. You can still review and correct pairs in Step 5.
+              </p>
+            </div>
 
             <div className="border-t pt-4" style={{ borderColor: "var(--border-color)" }}>
               <div className="flex items-center justify-between mb-3">

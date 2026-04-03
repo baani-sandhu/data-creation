@@ -2,7 +2,11 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from app.database import jobs_col, chunks_col, examples_col, results_col
-from app.services.prompt_builder import build_system_prompt, build_user_message
+from app.services.prompt_builder import (
+    build_system_prompt,
+    build_user_message,
+    build_zero_shot_user_message,
+)
 from app.services.llm_service import extract_pairs
 from app.auth import get_current_user, get_owned_job
 from datetime import datetime, timezone
@@ -18,8 +22,7 @@ async def generate(job_id: str, user: dict = Depends(get_current_user)):
     # 2. load human examples
     examples_cursor = examples_col.find({"job_id": job_id, "user_id": user["uid"]}).sort("created_at", 1)
     examples = await examples_cursor.to_list(length=500)
-    if len(examples) < 1:
-        raise HTTPException(400, "At least 1 labeled example required before generating")
+    has_examples = len(examples) > 0
 
     # 3. load all chunks
     all_chunks_cursor = chunks_col.find(
@@ -42,7 +45,11 @@ async def generate(job_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(400, "No chunks left to process")
 
     # 4. build prompt once (reused for every chunk)
-    system_prompt = build_system_prompt(job["task_prompt"], job["fields"])
+    system_prompt = build_system_prompt(
+        job["task_prompt"],
+        job["fields"],
+        has_examples=has_examples,
+    )
 
     # 5. process each chunk
     existing_model_count = await results_col.count_documents(
@@ -69,7 +76,13 @@ async def generate(job_id: str, user: dict = Depends(get_current_user)):
     for chunk in chunks_to_process:
         try:
             print(f"Processing chunk {chunk['chunk_index']} - {len(chunk['text'].split())} words")
-            user_message = build_user_message(chunk["text"], examples)
+            if has_examples:
+                user_message = build_user_message(chunk["text"], examples)
+            else:
+                user_message = build_zero_shot_user_message(
+                    chunk["text"],
+                    job["fields"],
+                )
             pairs = extract_pairs(system_prompt, user_message)
             print(f"Got {len(pairs)} pairs from chunk {chunk['chunk_index']}")
 
@@ -137,7 +150,6 @@ async def generate(job_id: str, user: dict = Depends(get_current_user)):
         "errors": errors if errors else None,
     }
 
-
 @router.get("/{job_id}/results")
 async def get_results(
     job_id: str,
@@ -166,7 +178,6 @@ async def get_results(
         "total": len(results),
         "results": results,
     }
-
 
 @router.get("/{job_id}/results/stats")
 async def get_results_stats(job_id: str, user: dict = Depends(get_current_user)):
@@ -207,13 +218,11 @@ async def get_results_stats(job_id: str, user: dict = Depends(get_current_user))
         "by_run": by_run,
     }
 
-
 class UpdateResultBody(BaseModel):
     pair: Optional[dict] = None
     approved: Optional[bool] = None
     discarded: Optional[bool] = None
     human_reviewed: Optional[bool] = None
-
 
 @router.patch("/{job_id}/results/{result_id}")
 async def update_result(job_id: str, result_id: str, body: UpdateResultBody, user: dict = Depends(get_current_user)):
@@ -254,7 +263,6 @@ async def update_result(job_id: str, result_id: str, body: UpdateResultBody, use
         raise HTTPException(404, "Result not found")
     updated["_id"] = str(updated["_id"])
     return updated
-
 
 @router.post("/{job_id}/results/{result_id}/add-example")
 async def add_example(job_id: str, result_id: str, user: dict = Depends(get_current_user)):

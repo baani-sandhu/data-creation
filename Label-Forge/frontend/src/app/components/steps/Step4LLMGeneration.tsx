@@ -5,17 +5,14 @@ import { LFButton } from "../ui/LFButton";
 import { S, GenerationResult } from "../../state";
 import { getIdToken } from "../../lib/auth";
 
-const MIN_EXAMPLES_ERROR = "At least 2 labeled examples required before generating";
-const MIN_EXAMPLES_MESSAGE = "You need at least 2 labeled pairs to run generation. Please go back and label more examples.";
-
 export function Step4LLMGeneration() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [needsMoreExamples, setNeedsMoreExamples] = useState(false);
   const [generationResult, setGenerationResult] = useState<GenerationResult | null>(
     S.generationResult ?? null
   );
+  const usedZeroShot = S.userExamples.length === 0;
 
   const API_BASE = "http://localhost:8001";
 
@@ -43,7 +40,6 @@ export function Step4LLMGeneration() {
 
   const runGeneration = async () => {
     setError("");
-    setNeedsMoreExamples(false);
     if (!S.jobId) {
       setError("No job found. Please create a job first.");
       setIsLoading(false);
@@ -62,12 +58,6 @@ export function Step4LLMGeneration() {
       });
       if (!response.ok) {
         const message = await extractErrorMessage(response);
-        if (response.status === 400 && message === MIN_EXAMPLES_ERROR) {
-          setNeedsMoreExamples(true);
-          setError(MIN_EXAMPLES_MESSAGE);
-          setGenerationResult(null);
-          return;
-        }
         throw new Error(message || "Failed to generate pairs.");
       }
       const data: GenerationResult = await response.json();
@@ -90,7 +80,7 @@ export function Step4LLMGeneration() {
   };
 
   const handleRetry = () => {
-    if (isLoading || needsMoreExamples) return;
+    if (isLoading) return;
     setError("");
     setGenerationResult(null);
     runGeneration();
@@ -244,6 +234,20 @@ export function Step4LLMGeneration() {
             </LFCard>
           </div>
 
+          {usedZeroShot && (
+            <div
+              className="rounded-[12px] border px-4 py-3"
+              style={{
+                borderColor: "#f6c453",
+                backgroundColor: "#fffbeb",
+              }}
+            >
+              <p style={{ fontSize: "13px", color: "#92400e" }}>
+                Generated using zero-shot prompting — no manual examples were provided. Consider reviewing more pairs carefully in the next step.
+              </p>
+            </div>
+          )}
+
           <div className="flex justify-end pt-4">
             <LFButton onClick={handleNext} disabled={isLoading}>
               Review Results
@@ -255,15 +259,14 @@ export function Step4LLMGeneration() {
       {!isLoading && error && (
         <div className="space-y-3">
           <p style={{ color: "var(--error-red)", fontSize: "12px" }}>{error}</p>
-          {needsMoreExamples ? (
-            <LFButton onClick={handleBackToLabeling}>
-              ← Back to Labeling
-            </LFButton>
-          ) : (
+          <div className="flex gap-2">
             <LFButton onClick={handleRetry} disabled={isLoading}>
               Retry
             </LFButton>
-          )}
+            <LFButton variant="ghost" onClick={handleBackToLabeling}>
+              ← Back to Labeling
+            </LFButton>
+          </div>
         </div>
       )}
     </div>
