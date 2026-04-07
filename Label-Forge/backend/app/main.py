@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import auth, jobs, examples, prompts, generation, export
 
-app = FastAPI(title="LabelForge API")
+app = FastAPI(title="LabelForge")
 
 app.add_middleware(
     CORSMiddleware,

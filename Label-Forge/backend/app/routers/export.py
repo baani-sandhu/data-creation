@@ -7,6 +7,17 @@ import json, csv, io
 router = APIRouter(prefix="/jobs", tags=["export"])
 
 
+async def _get_chunk_index_by_id(chunk_ids: list[str]) -> dict[str, int]:
+    if not chunk_ids:
+        return {}
+
+    from app.database import chunks_col
+
+    cursor = chunks_col.find({"_id": {"$in": chunk_ids}})
+    chunks = await cursor.to_list(length=len(chunk_ids))
+    return {chunk["_id"]: chunk.get("chunk_index", 0) for chunk in chunks}
+
+
 @router.get("/{job_id}/export")
 async def export_dataset(job_id: str, user: dict = Depends(get_current_user)):
     # load job to get output_format and fields
@@ -18,11 +29,12 @@ async def export_dataset(job_id: str, user: dict = Depends(get_current_user)):
     # fetch all approved, non-discarded results
     cursor = results_col.find({
         "job_id": job_id,
-        "user_id": user["uid"],
         "approved": True,
         "discarded": {"$ne": True}
-    }).sort("chunk_index", 1)
+    })
     results = await cursor.to_list(length=None)
+    chunk_index_by_id = await _get_chunk_index_by_id([result["chunk_id"] for result in results])
+    results.sort(key=lambda result: chunk_index_by_id.get(result["chunk_id"], 0))
 
     if not results:
         raise HTTPException(400, "No approved results to export")

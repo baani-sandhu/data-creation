@@ -1,9 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends
-from app.database import jobs_col, examples_col
+from app.database import jobs_col
 from pydantic import BaseModel
 from datetime import datetime, timezone
 from app.auth import get_current_user, get_owned_job
-import uuid
 
 router = APIRouter(prefix="/jobs", tags=["examples"])
 
@@ -29,7 +28,6 @@ class ExampleBulkCreate(BaseModel):
 
 @router.post("/{job_id}/examples")
 async def save_examples(job_id: str, body: ExampleBulkCreate, user: dict = Depends(get_current_user)):
-    # verify job exists
     job = await get_owned_job(job_id, user)
 
     if not body.examples:
@@ -56,60 +54,45 @@ async def save_examples(job_id: str, body: ExampleBulkCreate, user: dict = Depen
 
     now = datetime.now(timezone.utc)
 
-    # build documents
-    example_docs = []
+    new_examples = []
     for example in body.examples:
-        # store as a clean dict: {"input": "...", "output": "..."}
         pair_dict = {p.field: p.text for p in example.pairs}
+        input_value = pair_dict.get("input")
+        if input_value is None:
+            raise HTTPException(400, 'Example is missing required "input" field')
 
-        example_docs.append({
-            "_id": str(uuid.uuid4()),
-            "job_id": job_id,
-            "user_id": user["uid"],
-            "chunk_id": example.chunk_id,
-            "chunk_index": example.chunk_index,
-            "source_filename": example.source_filename,
-            "pair": pair_dict,       # the actual training pair
-            "source": "human",       # human vs model vs feedback
-            "created_at": now,
+        output_value = {
+            field: value for field, value in pair_dict.items() if field != "input"
+        }
+        if not output_value:
+            raise HTTPException(400, 'Example must include at least one output field')
+
+        new_examples.append({
+            "input": input_value,
+            "output": output_value,
         })
 
-    await examples_col.insert_many(example_docs)
+    all_examples = job.get("examples", []) + new_examples
 
-    # update job status to labeling
     await jobs_col.update_one(
         {"_id": job_id, "user_id": user["uid"]},
         {"$set": {
+            "examples": all_examples,
             "status": "labeling",
             "updated_at": now,
         }}
     )
 
     return {
-        "saved": len(example_docs),
+        "saved": len(new_examples),
         "job_id": job_id,
-        "examples": [
-            {
-                "id": doc["_id"],
-                "pair": doc["pair"],
-                "chunk_index": doc["chunk_index"],
-                "source_filename": doc["source_filename"],
-            }
-            for doc in example_docs
-        ]
+        "examples": new_examples,
     }
 
 @router.get("/{job_id}/examples")
 async def get_examples(job_id: str, user: dict = Depends(get_current_user)):
-    await get_owned_job(job_id, user)
-
-    cursor = examples_col.find(
-        {"job_id": job_id, "user_id": user["uid"]}
-    ).sort("created_at", 1)
-
-    examples = await cursor.to_list(length=500)
-    for e in examples:
-        e["_id"] = str(e["_id"])
+    job = await get_owned_job(job_id, user)
+    examples = job.get("examples", [])
 
     return {
         "job_id": job_id,
@@ -119,12 +102,20 @@ async def get_examples(job_id: str, user: dict = Depends(get_current_user)):
 
 @router.delete("/{job_id}/examples/{example_id}")
 async def delete_example(job_id: str, example_id: str, user: dict = Depends(get_current_user)):
-    await get_owned_job(job_id, user)
-    result = await examples_col.delete_one({
-        "_id": example_id,
-        "job_id": job_id,
-        "user_id": user["uid"],
-    })
-    if result.deleted_count == 0:
+    job = await get_owned_job(job_id, user)
+    examples = list(job.get("examples", []))
+
+    try:
+        example_index = int(example_id)
+    except ValueError as exc:
+        raise HTTPException(404, "Example not found") from exc
+
+    if example_index < 0 or example_index >= len(examples):
         raise HTTPException(404, "Example not found")
+
+    del examples[example_index]
+    await jobs_col.update_one(
+        {"_id": job_id, "user_id": user["uid"]},
+        {"$set": {"examples": examples, "updated_at": datetime.now(timezone.utc)}}
+    )
     return {"deleted": example_id}

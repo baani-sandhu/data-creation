@@ -12,8 +12,14 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 credentials_path = (
     os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
     or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    or "firebase_service_account.json"
 )
+
+if not credentials_path:
+    raise RuntimeError(
+        "Firebase credentials path is not configured. Set "
+        "FIREBASE_SERVICE_ACCOUNT_PATH or GOOGLE_APPLICATION_CREDENTIALS."
+    )
+
 CREDENTIALS_PATH = (
     credentials_path
     if os.path.isabs(credentials_path)
@@ -24,7 +30,6 @@ if not firebase_admin._apps:
     if not os.path.exists(CREDENTIALS_PATH):
         raise RuntimeError(f"Firebase service account file not found: {CREDENTIALS_PATH}")
     firebase_admin.initialize_app(credentials.Certificate(CREDENTIALS_PATH))
-
 
 async def get_current_user(request: Request) -> dict:
     auth_header = request.headers.get("Authorization", "")
@@ -49,7 +54,6 @@ async def get_current_user(request: Request) -> dict:
         "email": decoded.get("email"),
         "name": decoded.get("name"),
     }
-
 
 async def get_owned_job(job_id: str, user: dict) -> dict:
     job = await jobs_col.find_one({"_id": job_id})

@@ -13,6 +13,7 @@ export function Step4LLMGeneration() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [needsMoreExamples, setNeedsMoreExamples] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [generationResult, setGenerationResult] = useState<GenerationResult | null>(
     S.generationResult ?? null
   );
@@ -82,8 +83,30 @@ export function Step4LLMGeneration() {
   };
 
   useEffect(() => {
+    if (!S.jobId) {
+      setSessionExpired(true);
+      setIsLoading(false);
+      const timeoutId = window.setTimeout(() => {
+        navigate("/");
+      }, 1000);
+
+      return () => window.clearTimeout(timeoutId);
+    }
+
     runGeneration();
-  }, []);
+  }, [navigate]);
+
+  if (sessionExpired) {
+    return (
+      <div className="space-y-4">
+        <LFCard>
+          <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+            Session expired. Redirecting to your jobs...
+          </p>
+        </LFCard>
+      </div>
+    );
+  }
 
   const handleNext = () => {
     navigate("/wizard/review");

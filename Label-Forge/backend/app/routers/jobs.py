@@ -1,6 +1,8 @@
+import json
+
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from typing import List
-from app.database import jobs_col, chunks_col, results_col, examples_col
+from app.database import jobs_col, chunks_col, results_col
 from app.services.extractor import extract
 from app.services.chunker import chunk
 from app.auth import get_current_user, get_owned_job
@@ -14,6 +16,37 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 ALLOWED_EXTENSIONS = {"pdf", "txt", "md", "csv"}
 MAX_FILE_SIZE = 50 * 1024 * 1024
 
+
+def _parse_examples(examples_raw: str | None, field_list: list[str]) -> list[dict[str, object]]:
+    if not examples_raw:
+        return []
+
+    try:
+        parsed = json.loads(examples_raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, f"Invalid examples JSON: {exc.msg}") from exc
+
+    if not isinstance(parsed, list):
+        raise HTTPException(400, "Examples must be a JSON array")
+
+    examples = []
+    for example in parsed:
+        if not isinstance(example, dict):
+            raise HTTPException(400, "Each example must be an object")
+        input_value = example.get("input")
+        output_value = example.get("output")
+        if not isinstance(input_value, str):
+            raise HTTPException(400, 'Each example must include "input" as a string')
+        if not isinstance(output_value, dict):
+            raise HTTPException(400, 'Each example must include "output" as an object')
+        if not all(isinstance(key, str) for key in output_value.keys()):
+            raise HTTPException(400, 'Each example "output" key must be a string')
+        if not all(isinstance(value, str) for value in output_value.values()):
+            raise HTTPException(400, 'Each example "output" value must be a string')
+        examples.append({"input": input_value, "output": output_value})
+
+    return examples
+
 @router.post("/")
 async def create_job(
     user: dict = Depends(get_current_user),
@@ -22,6 +55,7 @@ async def create_job(
     task_prompt: str = Form(...),
     output_format: str = Form("jsonl"),
     confidence_threshold: float = Form(0.75),
+    examples: str | None = Form(None),
 ):
     if not files:
         raise HTTPException(400, "No files uploaded")
@@ -32,6 +66,8 @@ async def create_job(
 
     if not task_prompt.strip():
         raise HTTPException(400, "Task prompt is required")
+
+    parsed_examples = _parse_examples(examples, field_list)
 
     job_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
@@ -94,13 +130,9 @@ async def create_job(
         {
             "_id": str(uuid.uuid4()),
             "job_id": job_id,
-            "user_id": user["uid"],
             "chunk_index": i,
-            "chunk_index_in_file": c["chunk_index_in_file"],
-            "is_first_chunk": c["is_first_chunk"],
             "source_filename": c["source_filename"],
             "text": c["text"],
-            "word_count": len(c["text"].split()),
             "created_at": now,
         }
         for i, c in enumerate(all_chunks)
@@ -115,10 +147,8 @@ async def create_job(
         "task_prompt": task_prompt,
         "confidence_threshold": confidence_threshold,
         "output_format": output_format,
+        "examples": parsed_examples,
         "files": processed_files,
-        "chunk_count": len(chunk_docs),
-        "token_usage": 0,
-        "errors": errors,
         "created_at": now,
         "updated_at": now,
     }
@@ -137,7 +167,7 @@ async def create_job(
         "first_chunk": {
             "chunk_id": chunk_docs[0]["_id"],
             "text": chunk_docs[0]["text"],
-            "word_count": chunk_docs[0]["word_count"],
+            "word_count": len(chunk_docs[0]["text"].split()),
         } if chunk_docs else None,
     }
 
@@ -148,10 +178,11 @@ async def list_jobs(user: dict = Depends(get_current_user)):
 
     async def get_counts(job):
         job_id = str(job["_id"])
+        chunk_count = await chunks_col.count_documents({"job_id": job_id})
         pair_count = await results_col.count_documents({"job_id": job_id, "approved": True, "discarded": {"$ne": True}})
         pending_count = await results_col.count_documents({"job_id": job_id, "approved": False, "discarded": {"$ne": True}})
-        example_count = await examples_col.count_documents({"job_id": job_id})
-        return pair_count, pending_count, example_count
+        example_count = len(job.get("examples", []))
+        return chunk_count, pair_count, pending_count, example_count
 
     tasks = [get_counts(job) for job in jobs]
     counts_results = await asyncio.gather(*tasks)
@@ -162,7 +193,7 @@ async def list_jobs(user: dict = Depends(get_current_user)):
     completed = 0
 
     for i, job in enumerate(jobs):
-        pair_count, pending_count, example_count = counts_results[i]
+        chunk_count, pair_count, pending_count, example_count = counts_results[i]
         total_pairs += pair_count
         if job.get("status") == "review":
             in_review += 1
@@ -179,7 +210,7 @@ async def list_jobs(user: dict = Depends(get_current_user)):
             "_id": str(job["_id"]),
             "status": job.get("status"),
             "created_at": job.get("created_at"),
-            "chunk_count": job.get("chunk_count", 0),
+            "chunk_count": chunk_count,
             "pair_count": pair_count,
             "pending_count": pending_count,
             "example_count": example_count,
@@ -201,20 +232,23 @@ async def list_jobs(user: dict = Depends(get_current_user)):
 async def get_job(job_id: str, user: dict = Depends(get_current_user)):
     job = await get_owned_job(job_id, user)
     job["_id"] = str(job["_id"])
+    job.setdefault("examples", [])
+    job["chunk_count"] = await chunks_col.count_documents({"job_id": job_id})
     return job
 
 @router.get("/{job_id}/chunks")
 async def get_chunks(job_id: str, skip: int = 0, limit: int = 50, user: dict = Depends(get_current_user)):
     await get_owned_job(job_id, user)
 
-    total = await chunks_col.count_documents({"job_id": job_id, "user_id": user["uid"]})
+    total = await chunks_col.count_documents({"job_id": job_id})
     cursor = chunks_col.find(
-        {"job_id": job_id, "user_id": user["uid"]}
+        {"job_id": job_id}
     ).sort("chunk_index", 1).skip(skip).limit(limit)
 
     chunks = await cursor.to_list(length=limit)
     for c in chunks:
         c["_id"] = str(c["_id"])
+        c["word_count"] = len(c["text"].split())
 
     return {
         "job_id": job_id,
@@ -229,7 +263,6 @@ async def delete_job(job_id: str, user: dict = Depends(get_current_user)):
     job = await get_owned_job(job_id, user)
     
     await results_col.delete_many({"job_id": job_id})
-    await examples_col.delete_many({"job_id": job_id})
     await chunks_col.delete_many({"job_id": job_id})
     await jobs_col.delete_one({"_id": job_id})
     

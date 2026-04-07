@@ -48,6 +48,7 @@ export function Step3Sample() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   const API_BASE = "http://localhost:8001";
 
@@ -60,11 +61,32 @@ export function Step3Sample() {
   };
 
   useEffect(() => {
+    if (!S.jobId || S.chunks.length === 0) {
+      setSessionExpired(true);
+      const timeoutId = window.setTimeout(() => {
+        navigate("/");
+      }, 1000);
+
+      return () => window.clearTimeout(timeoutId);
+    }
+
     setFields(S.jobData?.fields ?? []);
     setChunks(S.chunks ?? []);
     setCurrentIndex(S.currentChunkIndex ?? 0);
     setJumpValue(String((S.currentChunkIndex ?? 0) + 1));
-  }, []);
+  }, [navigate]);
+
+  if (sessionExpired) {
+    return (
+      <div className="space-y-4">
+        <LFCard>
+          <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+            Session expired. Redirecting to your jobs...
+          </p>
+        </LFCard>
+      </div>
+    );
+  }
 
   const totalSavedPairs = S.userExamples.length;
   const currentChunk = chunks[currentIndex];
