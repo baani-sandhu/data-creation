@@ -91,3 +91,7 @@ site/
 firebase_service_account.json
 .env
 uploads/
+Label-Forge/backend/exports/
+__pycache__/
+*.pyc
+Label-Forge/backend/uploads/

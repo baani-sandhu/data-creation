@@ -5,6 +5,7 @@ import { LFButton } from "../ui/LFButton";
 import { LFBadge } from "../ui/LFBadge";
 import { S, ChunkData, ExampleCreate } from "../../state";
 import { getIdToken } from "../../lib/auth";
+import { API_BASE_URL } from "../../lib/api";
 
 const highlightColors = ["#dbeafe", "#dcfce7", "#fef9c3", "#f3e8ff"];
 
@@ -49,8 +50,6 @@ export function Step3Sample() {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [sessionExpired, setSessionExpired] = useState(false);
-
-  const API_BASE = "http://localhost:8001";
 
   const textRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -209,7 +208,7 @@ export function Step3Sample() {
       if (!token) {
         throw new Error("Please sign in to save examples.");
       }
-      const response = await fetch(`${API_BASE}/jobs/${S.jobId}/examples`, {
+      const response = await fetch(`${API_BASE_URL}/jobs/${S.jobId}/examples`, {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -230,6 +229,11 @@ export function Step3Sample() {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleSkipToGenerate = async () => {
+    setError("");
+    navigate("/wizard/generate");
   };
 
   const removeSavedPair = async (id: string) => {
@@ -685,8 +689,15 @@ export function Step3Sample() {
             </div>
 
             <LFButton onClick={handleGenerate} disabled={!canGenerate || isGenerating}>
-              {isGenerating ? "Generating..." : "Generate →"}
+              {isGenerating ? "Saving..." : "Save & Generate →"}
             </LFButton>
+
+            <LFButton variant="secondary" onClick={handleSkipToGenerate}>
+              Skip to Generate →
+            </LFButton>
+            <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+              No examples provided -- AI will use zero-shot prompting. Results may be less accurate.
+            </p>
 
             <div className="border-t pt-4" style={{ borderColor: "var(--border-color)" }}>
               <div className="flex items-center justify-between mb-3">
@@ -757,3 +768,4 @@ export function Step3Sample() {
     </div>
   );
 }
+

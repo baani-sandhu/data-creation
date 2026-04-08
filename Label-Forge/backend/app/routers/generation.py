@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import Optional
 from app.database import jobs_col, chunks_col, results_col
@@ -10,10 +10,10 @@ from app.services.prompt_builder import (
 from app.services.llm_service import extract_pairs
 from app.auth import get_current_user, get_owned_job
 from datetime import datetime, timezone
+from app.limiter import limiter
 import uuid
 
 router = APIRouter(prefix="/jobs", tags=["generation"])
-
 
 async def _get_chunk_metadata_by_id(chunk_ids: list[str]) -> dict[str, dict]:
     if not chunk_ids:
@@ -23,7 +23,6 @@ async def _get_chunk_metadata_by_id(chunk_ids: list[str]) -> dict[str, dict]:
     chunks = await cursor.to_list(length=len(chunk_ids))
     return {chunk["_id"]: chunk for chunk in chunks}
 
-
 def _normalize_job_example(input_text: str, output_pair: dict) -> dict:
     return {
         "input": input_text,
@@ -31,7 +30,8 @@ def _normalize_job_example(input_text: str, output_pair: dict) -> dict:
     }
 
 @router.post("/{job_id}/generate")
-async def generate(job_id: str, user: dict = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def generate(request: Request, job_id: str, user: dict = Depends(get_current_user)):
     job = await get_owned_job(job_id, user)
 
     examples = [{"pair": example} for example in job.get("examples", [])]
@@ -41,17 +41,7 @@ async def generate(job_id: str, user: dict = Depends(get_current_user)):
         {"job_id": job_id}
     ).sort("chunk_index", 1)
     all_chunks = await all_chunks_cursor.to_list(length=500)
-    # Also exclude chunks that already have approved results
-    approved_results_cursor = results_col.find(
-        {"job_id": job_id, "approved": True}
-    )
-    approved_results = await approved_results_cursor.to_list(length=2000)
-    approved_chunk_ids = set(r["chunk_id"] for r in approved_results)
-
-    chunks_to_process = [
-        c for c in all_chunks
-        if c["_id"] not in approved_chunk_ids
-    ]
+    chunks_to_process = all_chunks
 
     if not chunks_to_process:
         raise HTTPException(400, "No chunks left to process")

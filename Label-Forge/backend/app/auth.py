@@ -1,10 +1,11 @@
 import os
+import hashlib
 from fastapi import HTTPException, Request
 import firebase_admin
 from firebase_admin import auth, credentials
 from google.auth.exceptions import TransportError
 from dotenv import load_dotenv
-from app.database import jobs_col
+from app.database import jobs_col, api_keys_col
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -54,6 +55,36 @@ async def get_current_user(request: Request) -> dict:
         "email": decoded.get("email"),
         "name": decoded.get("name"),
     }
+
+
+async def get_current_user_flexible(request: Request) -> dict:
+    # try Firebase token first
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            return await get_current_user(request)
+        except HTTPException:
+            pass
+
+    # fall back to API key
+    api_key = request.headers.get("X-API-Key", "").strip()
+    if api_key:
+        key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+        doc = await api_keys_col.find_one({"key_hash": key_hash})
+        if doc:
+            # update last_used
+            from datetime import datetime, timezone
+            await api_keys_col.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"last_used": datetime.now(timezone.utc)}}
+            )
+            return {
+                "uid": doc["user_id"],
+                "email": None,
+                "name": None,
+            }
+
+    raise HTTPException(status_code=401, detail="Unauthorized")
 
 async def get_owned_job(job_id: str, user: dict) -> dict:
     job = await jobs_col.find_one({"_id": job_id})

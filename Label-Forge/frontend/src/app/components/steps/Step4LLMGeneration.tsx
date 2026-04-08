@@ -4,21 +4,18 @@ import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
 import { S, GenerationResult } from "../../state";
 import { getIdToken } from "../../lib/auth";
-
-const MIN_EXAMPLES_ERROR = "At least 2 labeled examples required before generating";
-const MIN_EXAMPLES_MESSAGE = "You need at least 2 labeled pairs to run generation. Please go back and label more examples.";
+import { API_BASE_URL } from "../../lib/api";
 
 export function Step4LLMGeneration() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [needsMoreExamples, setNeedsMoreExamples] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [totalChunks, setTotalChunks] = useState(Math.max(1, Number(S.jobData?.total_chunks ?? 1)));
+  const [simulatedChunk, setSimulatedChunk] = useState(1);
   const [generationResult, setGenerationResult] = useState<GenerationResult | null>(
     S.generationResult ?? null
   );
-
-  const API_BASE = "http://localhost:8001";
 
   const extractErrorMessage = async (response: Response) => {
     try {
@@ -44,7 +41,6 @@ export function Step4LLMGeneration() {
 
   const runGeneration = async () => {
     setError("");
-    setNeedsMoreExamples(false);
     if (!S.jobId) {
       setError("No job found. Please create a job first.");
       setIsLoading(false);
@@ -57,23 +53,37 @@ export function Step4LLMGeneration() {
       if (!token) {
         throw new Error("Please sign in to generate pairs.");
       }
-      const response = await fetch(`${API_BASE}/jobs/${S.jobId}/generate`, {
+
+      let resolvedTotal = Number(S.jobData?.total_chunks ?? 0);
+      if (!Number.isFinite(resolvedTotal) || resolvedTotal <= 0) {
+        const jobResponse = await fetch(`${API_BASE_URL}/jobs/${S.jobId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (jobResponse.ok) {
+          const jobData = await jobResponse.json();
+          resolvedTotal = Number(jobData?.chunk_count ?? 0);
+          if (S.jobData) {
+            S.jobData.total_chunks = resolvedTotal;
+          }
+        }
+      }
+      const normalizedTotal = Math.max(1, Math.floor(resolvedTotal || 1));
+      setTotalChunks(normalizedTotal);
+      setSimulatedChunk(1);
+
+      const response = await fetch(`${API_BASE_URL}/jobs/${S.jobId}/generate`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {
         const message = await extractErrorMessage(response);
-        if (response.status === 400 && message === MIN_EXAMPLES_ERROR) {
-          setNeedsMoreExamples(true);
-          setError(MIN_EXAMPLES_MESSAGE);
-          setGenerationResult(null);
-          return;
-        }
         throw new Error(message || "Failed to generate pairs.");
       }
       const data: GenerationResult = await response.json();
       S.generationResult = data;
       setGenerationResult(data);
+      setSimulatedChunk(normalizedTotal);
+      await new Promise((resolve) => window.setTimeout(resolve, 500));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to generate pairs.";
       setError(message);
@@ -96,6 +106,15 @@ export function Step4LLMGeneration() {
     runGeneration();
   }, [navigate]);
 
+  useEffect(() => {
+    if (!isLoading) return;
+    const maxBeforeCompletion = Math.max(1, totalChunks - 1);
+    const timer = window.setInterval(() => {
+      setSimulatedChunk((prev) => Math.min(prev + 1, maxBeforeCompletion));
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [isLoading, totalChunks]);
+
   if (sessionExpired) {
     return (
       <div className="space-y-4">
@@ -113,14 +132,10 @@ export function Step4LLMGeneration() {
   };
 
   const handleRetry = () => {
-    if (isLoading || needsMoreExamples) return;
+    if (isLoading) return;
     setError("");
     setGenerationResult(null);
     runGeneration();
-  };
-
-  const handleBackToLabeling = () => {
-    navigate("/wizard/sample");
   };
 
   return (
@@ -162,7 +177,7 @@ export function Step4LLMGeneration() {
                 color: "var(--text-muted)",
               }}
             >
-              Extracting pairs from your document...
+              Processing chunk {Math.min(simulatedChunk, totalChunks)} of {totalChunks}...
             </div>
           </div>
         </LFCard>
@@ -278,15 +293,9 @@ export function Step4LLMGeneration() {
       {!isLoading && error && (
         <div className="space-y-3">
           <p style={{ color: "var(--error-red)", fontSize: "12px" }}>{error}</p>
-          {needsMoreExamples ? (
-            <LFButton onClick={handleBackToLabeling}>
-              ← Back to Labeling
-            </LFButton>
-          ) : (
-            <LFButton onClick={handleRetry} disabled={isLoading}>
-              Retry
-            </LFButton>
-          )}
+          <LFButton onClick={handleRetry} disabled={isLoading}>
+            Retry
+          </LFButton>
         </div>
       )}
     </div>

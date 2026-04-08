@@ -46,7 +46,6 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-
 def _strip_code_fences(text: str) -> str:
     stripped = text.strip()
     if stripped.startswith("```") and stripped.endswith("```"):
@@ -56,7 +55,6 @@ def _strip_code_fences(text: str) -> str:
             return "\n".join(lines[1:-1]).strip()
     return stripped
 
-
 def refine_prompt(prompt: str) -> str:
     instruction = f"{SYSTEM_INSTRUCTION}\n\n{prompt}".strip()
     response = client.models.generate_content(
@@ -65,7 +63,6 @@ def refine_prompt(prompt: str) -> str:
     )
     text = getattr(response, "text", None) or ""
     return text.strip()
-
 
 def extract_pairs(system_prompt: str, user_message: str) -> list[dict]:
     prompt = f"{system_prompt}\n\n{user_message}".strip()

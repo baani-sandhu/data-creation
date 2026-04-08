@@ -68,6 +68,7 @@ export const S: {
   approvedResults: ResultItem[];
   pendingResults: ResultItem[];
   feedbackCount: number;
+  selectedDocumentId: string | null;
 } = {
   jobId: null,
   jobData: null,
@@ -81,6 +82,7 @@ export const S: {
   approvedResults: [],
   pendingResults: [],
   feedbackCount: 0,
+  selectedDocumentId: null,
 };
 
 export function resetAppState() {
@@ -96,4 +98,5 @@ export function resetAppState() {
   S.approvedResults = [];
   S.pendingResults = [];
   S.feedbackCount = 0;
+  S.selectedDocumentId = null;
 }

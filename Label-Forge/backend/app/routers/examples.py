@@ -57,20 +57,7 @@ async def save_examples(job_id: str, body: ExampleBulkCreate, user: dict = Depen
     new_examples = []
     for example in body.examples:
         pair_dict = {p.field: p.text for p in example.pairs}
-        input_value = pair_dict.get("input")
-        if input_value is None:
-            raise HTTPException(400, 'Example is missing required "input" field')
-
-        output_value = {
-            field: value for field, value in pair_dict.items() if field != "input"
-        }
-        if not output_value:
-            raise HTTPException(400, 'Example must include at least one output field')
-
-        new_examples.append({
-            "input": input_value,
-            "output": output_value,
-        })
+        new_examples.append(pair_dict)
 
     all_examples = job.get("examples", []) + new_examples
 

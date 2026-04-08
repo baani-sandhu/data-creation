@@ -5,6 +5,7 @@ import { LFButton } from "../ui/LFButton";
 import { LFProgress } from "../ui/LFProgress";
 import { S, ChunkData } from "../../state";
 import { getIdToken } from "../../lib/auth";
+import { API_BASE_URL } from "../../lib/api";
 
 export function Step2Extract() {
   const navigate = useNavigate();
@@ -15,8 +16,6 @@ export function Step2Extract() {
   const [isLoading, setIsLoading] = useState(false);
   const [isContinuing, setIsContinuing] = useState(false);
   const [error, setError] = useState("");
-
-  const API_BASE = "http://localhost:8001";
 
   useEffect(() => {
     const fetchChunks = async () => {
@@ -35,7 +34,7 @@ export function Step2Extract() {
         if (!token) {
           throw new Error("Please sign in to fetch chunks.");
         }
-        const response = await fetch(`${API_BASE}/jobs/${S.jobId}/chunks?limit=50`, {
+        const response = await fetch(`${API_BASE_URL}/jobs/${S.jobId}/chunks?limit=50`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok) {

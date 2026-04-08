@@ -1,6 +1,6 @@
 def build_system_prompt(task_prompt: str, fields: list[str], has_examples: bool = True) -> str:
     """
-    Builds the system prompt that gets sent to Claude along
+    Builds the system prompt along
     with the few-shot examples and the chunk to label.
     """
     fields_str = ", ".join(fields)
@@ -54,7 +54,6 @@ Now extract similar pairs from this text:
 {chunk}
 ---"""
 
-
 def build_zero_shot_user_message(
     chunk: str,
     fields: list[str],
@@ -76,12 +75,10 @@ Now extract pairs from this text:
 {chunk}
 ---"""
 
-
 def _format_examples(examples: list[dict]) -> str:
     """
     Formats the human-labeled examples into a readable
     few-shot block.
-
     Each example looks like:
     {{
         "pair": {{"input": "...", "output": "..."}}

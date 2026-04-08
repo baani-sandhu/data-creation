@@ -3,6 +3,7 @@ import { Download } from "lucide-react";
 import { LFButton } from "../ui/LFButton";
 import { LFCard } from "../ui/LFCard";
 import { getIdToken } from "../../lib/auth";
+import { API_BASE_URL } from "../../lib/api";
 import { S, type JobData, type ResultItem } from "../../state";
 
 interface ResultsStats {
@@ -19,8 +20,11 @@ export function Step6Export() {
   const [previewError, setPreviewError] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [isSavedToGallery, setIsSavedToGallery] = useState(false);
 
-  const API_BASE = "http://localhost:8001";
   const fmt = ((jobData?.output_format || "json").toLowerCase()) as ExportFormat;
   const labels: Record<ExportFormat, string> = {
     json: "Download JSON",
@@ -49,9 +53,9 @@ export function Step6Export() {
       try {
         const authHeaders = await getAuthHeaders();
         const [resultsResponse, statsResponse, jobResponse] = await Promise.all([
-          fetch(`${API_BASE}/jobs/${S.jobId}/results?approved=true`, { headers: authHeaders }),
-          fetch(`${API_BASE}/jobs/${S.jobId}/results/stats`, { headers: authHeaders }),
-          fetch(`${API_BASE}/jobs/${S.jobId}`, { headers: authHeaders }),
+          fetch(`${API_BASE_URL}/jobs/${S.jobId}/results?approved=true`, { headers: authHeaders }),
+          fetch(`${API_BASE_URL}/jobs/${S.jobId}/results/stats`, { headers: authHeaders }),
+          fetch(`${API_BASE_URL}/jobs/${S.jobId}`, { headers: authHeaders }),
         ]);
 
         if (!resultsResponse.ok) {
@@ -99,7 +103,7 @@ export function Step6Export() {
     setIsDownloading(true);
     try {
       const authHeaders = await getAuthHeaders();
-      const response = await fetch(`${API_BASE}/jobs/${S.jobId}/export`, {
+      const response = await fetch(`${API_BASE_URL}/jobs/${S.jobId}/export`, {
         headers: authHeaders,
       });
       if (!response.ok) {
@@ -119,6 +123,41 @@ export function Step6Export() {
       setDownloadError(message);
     } finally {
       setIsDownloading(false);
+    }
+  };
+
+  const handleSaveToGallery = async () => {
+    setSaveMessage("");
+    setSaveError("");
+    if (!S.jobId) {
+      setSaveError("No job found. Please create a job first.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const authHeaders = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/jobs/${S.jobId}/save-to-gallery`, {
+        method: "POST",
+        headers: authHeaders,
+      });
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || "Failed to save dataset.");
+      }
+
+      const data = await response.json();
+      if (data?.already_saved) {
+        setSaveMessage("Already saved to gallery");
+      } else {
+        setSaveMessage("Dataset saved to your gallery. View it on the Dashboard.");
+      }
+      setIsSavedToGallery(true);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to save dataset.";
+      setSaveError(message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -326,9 +365,26 @@ export function Step6Export() {
           <Download className="w-4 h-4" />
           {isDownloading ? "Downloading..." : downloadLabel}
         </LFButton>
+        <LFButton
+          variant="secondary"
+          onClick={handleSaveToGallery}
+          disabled={isSaving || isSavedToGallery}
+        >
+          {isSaving ? "Saving..." : "Save to Gallery"}
+        </LFButton>
         {downloadError && (
           <span style={{ fontSize: "12px", color: "var(--error-red)" }}>
             {downloadError}
+          </span>
+        )}
+        {saveMessage && (
+          <span style={{ fontSize: "12px", color: "var(--success-green)" }}>
+            {saveMessage}
+          </span>
+        )}
+        {saveError && (
+          <span style={{ fontSize: "12px", color: "var(--error-red)" }}>
+            {saveError}
           </span>
         )}
       </div>

@@ -1,20 +1,19 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from app.services.llm_service import refine_prompt
+from app.limiter import limiter
 
 router = APIRouter(prefix="/prompts", tags=["prompts"])
-
 
 class PromptRefineRequest(BaseModel):
     prompt: str
 
-
 class PromptRefineResponse(BaseModel):
     refined_prompt: str
 
-
 @router.post("/refine", response_model=PromptRefineResponse)
-async def refine_prompt_endpoint(body: PromptRefineRequest):
+@limiter.limit("10/minute")
+async def refine_prompt_endpoint(request: Request, body: PromptRefineRequest):
     if not body.prompt.strip():
         raise HTTPException(400, "Prompt is required")
 
