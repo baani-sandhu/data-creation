@@ -50,6 +50,7 @@ export function Step3Sample() {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [isBootstrapping, setIsBootstrapping] = useState(false);
 
   const textRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -60,32 +61,75 @@ export function Step3Sample() {
   };
 
   useEffect(() => {
-    if (!S.jobId || S.chunks.length === 0) {
-      setSessionExpired(true);
-      const timeoutId = window.setTimeout(() => {
-        navigate("/");
-      }, 1000);
+    let timeoutId: number | undefined;
+    let cancelled = false;
 
-      return () => window.clearTimeout(timeoutId);
-    }
+    const initialize = async () => {
+      setError("");
 
-    setFields(S.jobData?.fields ?? []);
-    setChunks(S.chunks ?? []);
-    setCurrentIndex(S.currentChunkIndex ?? 0);
-    setJumpValue(String((S.currentChunkIndex ?? 0) + 1));
+      if (!S.jobId) {
+        if (cancelled) return;
+        setSessionExpired(true);
+        timeoutId = window.setTimeout(() => {
+          navigate("/");
+        }, 1000);
+        return;
+      }
+
+      setIsBootstrapping(true);
+      try {
+        if (S.chunks.length === 0) {
+          const token = await getIdToken();
+          if (!token) {
+            throw new Error("Please sign in to continue.");
+          }
+
+          const response = await fetch(`${API_BASE_URL}/jobs/${S.jobId}/chunks?limit=500`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!response.ok) {
+            const message = await response.text();
+            throw new Error(message || "Failed to load chunks.");
+          }
+
+          const data = await response.json();
+          S.chunks = data.chunks || [];
+        }
+
+        if (S.chunks.length === 0) {
+          throw new Error("No chunks found for this job.");
+        }
+
+        if (cancelled) return;
+        setSessionExpired(false);
+        setFields(S.jobData?.fields ?? []);
+        setChunks(S.chunks ?? []);
+        setCurrentIndex(S.currentChunkIndex ?? 0);
+        setJumpValue(String((S.currentChunkIndex ?? 0) + 1));
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : "Session expired.";
+        setError(message);
+        setSessionExpired(true);
+        timeoutId = window.setTimeout(() => {
+          navigate("/");
+        }, 1200);
+      } finally {
+        if (!cancelled) {
+          setIsBootstrapping(false);
+        }
+      }
+    };
+
+    initialize();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, [navigate]);
-
-  if (sessionExpired) {
-    return (
-      <div className="space-y-4">
-        <LFCard>
-          <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
-            Session expired. Redirecting to your jobs...
-          </p>
-        </LFCard>
-      </div>
-    );
-  }
 
   const totalSavedPairs = S.userExamples.length;
   const currentChunk = chunks[currentIndex];
@@ -426,6 +470,30 @@ export function Step3Sample() {
 
     return nodes;
   }, [assignments, currentChunk?.text]);
+
+  if (sessionExpired) {
+    return (
+      <div className="space-y-4">
+        <LFCard>
+          <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+            Session expired. Redirecting to your jobs...
+          </p>
+        </LFCard>
+      </div>
+    );
+  }
+
+  if (isBootstrapping) {
+    return (
+      <div className="space-y-4">
+        <LFCard>
+          <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+            Restoring your sample labeling session...
+          </p>
+        </LFCard>
+      </div>
+    );
+  }
 
   if (!currentChunk) {
     return (
