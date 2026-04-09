@@ -4,6 +4,7 @@ import json
 import pytest
 from fastapi import HTTPException
 from httpx import AsyncClient
+from starlette.background import BackgroundTasks
 
 
 async def test_health_endpoint(client):
@@ -87,6 +88,11 @@ async def test_create_job_missing_fields(client, mock_auth_header, sample_txt_by
 async def test_create_job_stores_examples_inside_job(
     client, mock_auth_header, sample_txt_bytes, monkeypatch
 ):
+    async def eager_add_task(self, func, *args, **kwargs):
+        await func(*args, **kwargs)
+
+    monkeypatch.setattr(BackgroundTasks, "add_task", eager_add_task)
+
     inserted = {}
 
     class DummyAiofilesContext:
@@ -105,11 +111,15 @@ async def test_create_job_stores_examples_inside_job(
     async def mock_insert_one(doc):
         inserted["job"] = doc
 
+    async def mock_update_one(*args, **kwargs):
+        return None
+
     monkeypatch.setattr("app.routers.jobs.extract", lambda file_bytes, ext: "alpha\nbeta")
-    monkeypatch.setattr("app.routers.jobs.chunk", lambda text, strategy="auto": ["chunk 1"])
+    monkeypatch.setattr("app.routers.jobs.chunk", lambda text: ["chunk 1"])
     monkeypatch.setattr("app.routers.jobs.aiofiles.open", lambda *args, **kwargs: DummyAiofilesContext())
     monkeypatch.setattr("app.routers.jobs.chunks_col.insert_many", mock_insert_many)
     monkeypatch.setattr("app.routers.jobs.jobs_col.insert_one", mock_insert_one)
+    monkeypatch.setattr("app.routers.jobs.jobs_col.update_one", mock_update_one)
 
     response = await client.post(
         "/jobs/",

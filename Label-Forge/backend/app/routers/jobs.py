@@ -1,4 +1,5 @@
 import json
+import traceback
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, BackgroundTasks, Request
 from typing import List
@@ -12,10 +13,11 @@ from datetime import datetime, timezone
 import uuid, aiofiles, os, asyncio
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
-UPLOAD_DIR = "uploads"
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "uploads")
+UPLOAD_DIR = os.path.normpath(UPLOAD_DIR)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {"pdf", "txt", "md", "csv"}
+ALLOWED_EXTENSIONS = {"pdf", "txt", "md", "csv", "docx"}
 MAX_FILE_SIZE = 50 * 1024 * 1024
 
 
@@ -102,21 +104,26 @@ async def _upsert_document(
 
 
 async def process_job(job_id: str, saved_files: list[dict], user_id: str):
+    print(f"[process_job] START job_id={job_id}")
+    print(f"[process_job] saved_files={saved_files}")
     try:
         await jobs_col.update_one(
             {"_id": job_id, "user_id": user_id},
             {"$set": {"status": "extracting", "updated_at": datetime.now(timezone.utc)}}
         )
+        print(f"[process_job] status set to extracting")
 
         extracted_files = []
         errors = []
 
         for file_info in saved_files:
             try:
+                print(f"[process_job] extracting file: {file_info['filename']}")
                 async with aiofiles.open(file_info["file_path"], "rb") as f:
                     file_bytes = await f.read()
 
                 text = extract(file_bytes, file_info["ext"])
+                print(f"[process_job] extracted text length: {len(text) if text else 0}")
                 if not text or not text.strip():
                     errors.append({"filename": file_info["filename"], "error": "No text extracted"})
                     continue
@@ -126,13 +133,16 @@ async def process_job(job_id: str, saved_files: list[dict], user_id: str):
                     "text": text,
                 })
             except Exception as e:
-                errors.append({"filename": file_info["filename"], "error": str(e)})
+                full_trace = traceback.format_exc()
+                print(f"[process_job] per-file extraction error ({file_info.get('filename')}): {full_trace}")
+                errors.append({"filename": file_info["filename"], "error": full_trace})
                 continue
 
         await jobs_col.update_one(
             {"_id": job_id, "user_id": user_id},
             {"$set": {"status": "chunking", "updated_at": datetime.now(timezone.utc)}}
         )
+        print(f"[process_job] status set to chunking")
 
         now = datetime.now(timezone.utc)
         chunk_docs = []
@@ -141,7 +151,8 @@ async def process_job(job_id: str, saved_files: list[dict], user_id: str):
 
         for extracted_file in extracted_files:
             try:
-                file_chunks = chunk(extracted_file["text"], strategy="auto")
+                file_chunks = chunk(extracted_file["text"])
+                print(f"[process_job] chunks produced: {len(file_chunks)}")
                 if not file_chunks:
                     errors.append({"filename": extracted_file["filename"], "error": "No chunks produced"})
                     continue
@@ -176,11 +187,14 @@ async def process_job(job_id: str, saved_files: list[dict], user_id: str):
                     "file_size": extracted_file["file_size"],
                 })
             except Exception as e:
-                errors.append({"filename": extracted_file["filename"], "error": str(e)})
+                full_trace = traceback.format_exc()
+                print(f"[process_job] per-file chunking error ({extracted_file.get('filename')}): {full_trace}")
+                errors.append({"filename": extracted_file["filename"], "error": full_trace})
                 continue
 
         if chunk_docs:
             await chunks_col.insert_many(chunk_docs)
+            print(f"[process_job] inserted {len(chunk_docs)} chunks to MongoDB")
 
         if not chunk_docs:
             await jobs_col.update_one(
@@ -204,12 +218,18 @@ async def process_job(job_id: str, saved_files: list[dict], user_id: str):
                 "updated_at": datetime.now(timezone.utc),
             }}
         )
+        print(f"[process_job] DONE status=chunked")
     except Exception as e:
+        full_trace = traceback.format_exc()
+        print(f"[process_job] FATAL ERROR: {e}")
+        print(full_trace)
+        print(f"[process_job] FATAL: {full_trace}")
         await jobs_col.update_one(
             {"_id": job_id, "user_id": user_id},
             {"$set": {
                 "status": "failed",
                 "error": str(e),
+                "traceback": full_trace,
                 "updated_at": datetime.now(timezone.utc),
             }}
         )
@@ -258,7 +278,7 @@ async def create_job(
             continue
 
         safe_name = file.filename.replace(" ", "_")
-        file_path = f"{UPLOAD_DIR}/{job_id}_{safe_name}"
+        file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{safe_name}")
         async with aiofiles.open(file_path, "wb") as f:
             await f.write(file_bytes)
 

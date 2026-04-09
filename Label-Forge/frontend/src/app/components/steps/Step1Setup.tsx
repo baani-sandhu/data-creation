@@ -169,7 +169,14 @@ export function Step1Setup() {
       setError("Please upload at least one file.");
       return;
     }
-    if (labels.length < 2) {
+    const effectiveLabels = labels.length === 0
+      ? [
+          { name: "question", color: labelColorOptions[0] },
+          { name: "answer", color: labelColorOptions[1] },
+        ]
+      : labels;
+
+    if (effectiveLabels.length < 2) {
       setError("Please add at least two fields.");
       return;
     }
@@ -179,6 +186,7 @@ export function Step1Setup() {
     }
 
     setIsSubmitting(true);
+    setLabels(effectiveLabels);
     try {
       const token = await getIdToken();
       if (!token) {
@@ -196,7 +204,7 @@ export function Step1Setup() {
           },
           body: JSON.stringify({
             document_id: selectedDocumentId,
-            fields: labels.map((label) => label.name),
+            fields: effectiveLabels.map((label) => label.name),
             task_prompt: taskDescription,
             output_format: exportFormat.toLowerCase(),
             confidence_threshold: Number.isNaN(threshold) ? 0.75 : threshold,
@@ -207,7 +215,7 @@ export function Step1Setup() {
         S.uploadedFiles.forEach((file) => {
           formData.append("files", file);
         });
-        formData.append("fields", labels.map((label) => label.name).join(","));
+        formData.append("fields", effectiveLabels.map((label) => label.name).join(","));
         formData.append("task_prompt", taskDescription);
         formData.append("output_format", exportFormat.toLowerCase());
         formData.append("confidence_threshold", String(Number.isNaN(threshold) ? 0.75 : threshold));
@@ -318,7 +326,7 @@ export function Step1Setup() {
                   type="file"
                   className="hidden"
                   onChange={handleFileChange}
-                  accept=".pdf,.txt,.docx"
+                  accept=".pdf,.txt,.md,.csv,.docx"
                   multiple
                 />
                 <div className="w-14 h-14 rounded-full bg-[var(--label-blue)] flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
@@ -413,6 +421,9 @@ export function Step1Setup() {
                   Add
                 </LFButton>
               </div>
+              <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                If no labels are added, "question" and "answer" will be used by default.
+              </p>
               {labels.length > 0 && (
                 <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg border" style={{ borderColor: "var(--border-color)" }}>
                   {labels.map((label, index) => (

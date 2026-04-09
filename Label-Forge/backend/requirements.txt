@@ -13,3 +13,4 @@ pytest-asyncio
 google-genai
 firebase-admin
 slowapi
+python-docx

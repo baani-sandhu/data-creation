@@ -1,16 +1,24 @@
 import pdfplumber
 import fitz
 import io
+from docx import Document
 
 def extract(file_bytes: bytes, file_ext: str) -> str:
     file_ext = file_ext.lower().lstrip(".")
 
     if file_ext == "pdf":
         return _extract_pdf(file_bytes)
+    elif file_ext == "docx":
+        return extract_docx(file_bytes)
     elif file_ext in ["txt", "md", "csv"]:
         return _extract_text(file_bytes)
     else:
         raise ValueError(f"Unsupported file type: .{file_ext}")
+
+def extract_docx(file_bytes: bytes) -> str:
+    doc = Document(io.BytesIO(file_bytes))
+    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+    return "\n\n".join(paragraphs)
 
 def _extract_pdf(file_bytes: bytes) -> str:
     text = _try_pymupdf(file_bytes)

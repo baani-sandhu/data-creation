@@ -11,7 +11,8 @@ from app.database import chunks_col, datasets_col, results_col
 
 router = APIRouter(tags=["export"])
 
-EXPORT_DIR = "exports"
+EXPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "exports")
+EXPORT_DIR = os.path.normpath(EXPORT_DIR)
 os.makedirs(EXPORT_DIR, exist_ok=True)
 
 
