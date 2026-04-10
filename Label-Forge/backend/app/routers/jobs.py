@@ -17,8 +17,7 @@ UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."
 UPLOAD_DIR = os.path.normpath(UPLOAD_DIR)
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-ALLOWED_EXTENSIONS = {"pdf", "txt", "md", "csv", "docx"}
-MAX_FILE_SIZE = 50 * 1024 * 1024
+ALLOWED_EXTENSIONS = {"pdf", "txt", "md", "csv", "pptx", "docx", "xlsx", "xls"}
 
 
 class CreateJobFromDocumentBody(BaseModel):
@@ -273,10 +272,6 @@ async def create_job(
             continue
 
         file_bytes = await file.read()
-        if len(file_bytes) > MAX_FILE_SIZE:
-            errors.append({"filename": file.filename, "error": "File too large. Max 50MB."})
-            continue
-
         safe_name = file.filename.replace(" ", "_")
         file_path = os.path.join(UPLOAD_DIR, f"{job_id}_{safe_name}")
         async with aiofiles.open(file_path, "wb") as f:

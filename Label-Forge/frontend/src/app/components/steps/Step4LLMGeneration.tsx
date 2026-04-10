@@ -17,6 +17,27 @@ export function Step4LLMGeneration() {
     S.generationResult ?? null
   );
 
+  const syncProgressFromJob = async (token: string, fallbackTotal: number) => {
+    if (!S.jobId) return;
+    try {
+      const jobResponse = await fetch(`${API_BASE_URL}/jobs/${S.jobId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!jobResponse.ok) return;
+
+      const jobData = await jobResponse.json();
+      const backendTotal = Number(jobData?.total_chunks ?? jobData?.chunk_count ?? fallbackTotal);
+      const normalizedTotal = Math.max(1, Math.floor(backendTotal || fallbackTotal || 1));
+      const processed = Math.max(0, Math.floor(Number(jobData?.processed_chunks ?? 0)));
+      const nextChunk = Math.min(normalizedTotal, Math.max(1, processed + 1));
+
+      setTotalChunks(normalizedTotal);
+      setSimulatedChunk(nextChunk);
+    } catch {
+      // Keep existing progress state if polling temporarily fails.
+    }
+  };
+
   const extractErrorMessage = async (response: Response) => {
     try {
       const data = await response.json();
@@ -48,6 +69,7 @@ export function Step4LLMGeneration() {
     }
 
     setIsLoading(true);
+    let pollId: number | null = null;
     try {
       const token = await getIdToken();
       if (!token) {
@@ -70,6 +92,11 @@ export function Step4LLMGeneration() {
       const normalizedTotal = Math.max(1, Math.floor(resolvedTotal || 1));
       setTotalChunks(normalizedTotal);
       setSimulatedChunk(1);
+      await syncProgressFromJob(token, normalizedTotal);
+
+      pollId = window.setInterval(() => {
+        void syncProgressFromJob(token, normalizedTotal);
+      }, 1000);
 
       const response = await fetch(`${API_BASE_URL}/jobs/${S.jobId}/generate`, {
         method: "POST",
@@ -88,6 +115,9 @@ export function Step4LLMGeneration() {
       const message = err instanceof Error ? err.message : "Unable to generate pairs.";
       setError(message);
     } finally {
+      if (pollId !== null) {
+        window.clearInterval(pollId);
+      }
       setIsLoading(false);
     }
   };
@@ -105,15 +135,6 @@ export function Step4LLMGeneration() {
 
     runGeneration();
   }, [navigate]);
-
-  useEffect(() => {
-    if (!isLoading) return;
-    const maxBeforeCompletion = Math.max(1, totalChunks - 1);
-    const timer = window.setInterval(() => {
-      setSimulatedChunk((prev) => Math.min(prev + 1, maxBeforeCompletion));
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, [isLoading, totalChunks]);
 
   if (sessionExpired) {
     return (

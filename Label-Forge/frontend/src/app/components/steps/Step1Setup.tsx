@@ -84,6 +84,12 @@ export function Step1Setup() {
     const nextFiles = e.target.files ? Array.from(e.target.files) : [];
     if (!nextFiles.length) return;
 
+    if (S.selectedDocumentId) {
+      S.selectedDocumentId = null;
+      setSelectedDocumentId(null);
+      setSelectedDocumentName("");
+    }
+
     const existingNames = new Set(S.uploadedFiles.map((file) => file.name));
     const newFiles = nextFiles.filter((file) => !existingNames.has(file.name));
     const updated = [...S.uploadedFiles, ...newFiles];
@@ -301,7 +307,7 @@ export function Step1Setup() {
             </div>
           )}
 
-          {selectedDocumentId ? (
+          {selectedDocumentId && (
             <div
               className="flex items-center justify-between rounded-lg border p-3 bg-[var(--label-blue)]"
               style={{ borderColor: "var(--label-blue-border)" }}
@@ -316,59 +322,56 @@ export function Step1Setup() {
                 Clear
               </LFButton>
             </div>
-          ) : (
-            <>
-              <label
-                className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 cursor-pointer hover:border-[var(--primary-blue)] hover:bg-[var(--label-blue)]/30 transition-all group"
-                style={{ borderColor: "var(--border-color)" }}
-              >
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={handleFileChange}
-                  accept=".pdf,.txt,.md,.csv,.docx"
-                  multiple
-                />
-                <div className="w-14 h-14 rounded-full bg-[var(--label-blue)] flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Upload className="w-7 h-7" style={{ color: "var(--primary-blue)" }} />
-                </div>
-                <span style={{ color: "var(--ink-dark)", fontSize: "15px", fontWeight: 500 }}>
-                  Click to upload or drag and drop
-                </span>
-                <span style={{ color: "var(--text-muted)", fontSize: "13px" }}>
-                  PDF, TXT, DOCX
-                </span>
-              </label>
-              {uploadedFiles.length > 0 && (
-                <div className="space-y-2">
-                  {uploadedFiles.map((file) => (
-                    <div
-                      key={file.name}
-                      className="flex items-center gap-3 p-3 bg-[var(--label-blue)] rounded-lg border"
-                      style={{ borderColor: "var(--label-blue-border)" }}
-                    >
-                      <FileText className="w-5 h-5" style={{ color: "var(--primary-blue)" }} />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <LFBadge color="blue">{file.name.split(".").pop()?.toUpperCase()}</LFBadge>
-                          <span style={{ fontSize: "14px", fontWeight: 500 }}>{file.name}</span>
-                        </div>
-                        <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                          {(file.size / 1024).toFixed(1)} KB
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => handleRemoveFile(file.name)}
-                        className="hover:opacity-70 transition-opacity"
-                        style={{ color: "var(--primary-blue)", fontSize: "14px" }}
-                      >
-                        X
-                      </button>
+          )}
+          <label
+            className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 cursor-pointer hover:border-[var(--primary-blue)] hover:bg-[var(--label-blue)]/30 transition-all group"
+            style={{ borderColor: "var(--border-color)" }}
+          >
+            <input
+              type="file"
+              className="hidden"
+              onChange={handleFileChange}
+              accept=".pdf,.txt,.md,.csv,.pptx,.docx,.xlsx,.xls"
+              multiple
+            />
+            <div className="w-14 h-14 rounded-full bg-[var(--label-blue)] flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+              <Upload className="w-7 h-7" style={{ color: "var(--primary-blue)" }} />
+            </div>
+            <span style={{ color: "var(--ink-dark)", fontSize: "15px", fontWeight: 500 }}>
+              Click to upload or drag and drop
+            </span>
+            <span style={{ color: "var(--text-muted)", fontSize: "13px" }}>
+              PDF, TXT, MD, CSV, DOCX, PPTX, XLSX, XLS
+            </span>
+          </label>
+          {uploadedFiles.length > 0 && (
+            <div className="space-y-2">
+              {uploadedFiles.map((file) => (
+                <div
+                  key={file.name}
+                  className="flex items-center gap-3 p-3 bg-[var(--label-blue)] rounded-lg border"
+                  style={{ borderColor: "var(--label-blue-border)" }}
+                >
+                  <FileText className="w-5 h-5" style={{ color: "var(--primary-blue)" }} />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <LFBadge color="blue">{file.name.split(".").pop()?.toUpperCase()}</LFBadge>
+                      <span style={{ fontSize: "14px", fontWeight: 500 }}>{file.name}</span>
                     </div>
-                  ))}
+                    <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                      {(file.size / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleRemoveFile(file.name)}
+                    className="hover:opacity-70 transition-opacity"
+                    style={{ color: "var(--primary-blue)", fontSize: "14px" }}
+                  >
+                    X
+                  </button>
                 </div>
-              )}
-            </>
+              ))}
+            </div>
           )}
         </div>
       </LFCard>

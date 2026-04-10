@@ -67,10 +67,17 @@ async def generate(request: Request, job_id: str, user: dict = Depends(get_curre
     now = datetime.now(timezone.utc)
     all_results = []
     errors = []
+    processed_chunks = 0
+    total_chunks = len(chunks_to_process)
 
     await jobs_col.update_one(
         {"_id": job_id, "user_id": user["uid"]},
-        {"$set": {"status": "generating", "updated_at": now}}
+        {"$set": {
+            "status": "generating",
+            "processed_chunks": 0,
+            "total_chunks": total_chunks,
+            "updated_at": now,
+        }}
     )
 
     for chunk in chunks_to_process:
@@ -116,6 +123,16 @@ async def generate(request: Request, job_id: str, user: dict = Depends(get_curre
                 "error": str(e)
             })
             continue
+        finally:
+            processed_chunks += 1
+            await jobs_col.update_one(
+                {"_id": job_id, "user_id": user["uid"]},
+                {"$set": {
+                    "processed_chunks": processed_chunks,
+                    "total_chunks": total_chunks,
+                    "updated_at": datetime.now(timezone.utc),
+                }}
+            )
 
     await results_col.delete_many(
         {"job_id": job_id, "source": "model", "approved": False}
@@ -130,6 +147,8 @@ async def generate(request: Request, job_id: str, user: dict = Depends(get_curre
         {"_id": job_id, "user_id": user["uid"]},
         {"$set": {
             "status": "review",
+            "processed_chunks": processed_chunks,
+            "total_chunks": total_chunks,
             "updated_at": datetime.now(timezone.utc),
         }}
     )
