@@ -4,7 +4,7 @@ import { LFButton } from "../ui/LFButton";
 import { LFCard } from "../ui/LFCard";
 import { getIdToken } from "../../lib/auth";
 import { API_BASE_URL } from "../../lib/api";
-import { S, type JobData, type ResultItem } from "../../state";
+import { S, persistState, type JobData, type ResultItem } from "../../state";
 
 interface ResultsStats {
   pending: number;
@@ -80,6 +80,7 @@ export function Step6Export() {
         setExportResults(nextResults);
         setStats(statsData as ResultsStats);
         S.jobData = nextJobData;
+        persistState();
         setJobData(nextJobData as JobData);
         console.log("output_format:", nextJobData.output_format);
       } catch (err) {

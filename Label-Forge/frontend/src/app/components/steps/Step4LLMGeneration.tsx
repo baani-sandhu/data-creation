@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
-import { S, GenerationResult } from "../../state";
+import { S, GenerationResult, persistState } from "../../state";
 import { getIdToken } from "../../lib/auth";
 import { API_BASE_URL } from "../../lib/api";
 
@@ -64,6 +64,7 @@ export function Step4LLMGeneration() {
       }
       const result = data as GenerationResult;
       S.generationResult = result;
+      persistState();
       setGenerationResult(result);
       setSimulatedChunk(normalizedTotal);
       await new Promise((resolve) => window.setTimeout(resolve, 500));
@@ -108,6 +109,8 @@ export function Step4LLMGeneration() {
   const handleRetry = () => {
     if (isLoading) return;
     setError("");
+    S.generationResult = null;
+    persistState();
     setGenerationResult(null);
     runGeneration();
   };

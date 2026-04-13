@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
 import { LFProgress } from "../ui/LFProgress";
-import { S, ChunkData } from "../../state";
+import { S, ChunkData, persistState } from "../../state";
 import { getIdToken } from "../../lib/auth";
 import { API_BASE_URL } from "../../lib/api";
 
@@ -43,6 +43,14 @@ export function Step2Extract() {
         }
         const data = await response.json();
         S.chunks = data.chunks || [];
+        persistState();
+        if (S.jobData) {
+          S.jobData = {
+            ...S.jobData,
+            total_chunks: Number(data?.total_chunks ?? S.chunks.length ?? 0),
+          };
+          persistState();
+        }
         setChunks(S.chunks);
         setProgress(100);
         setStatus("Extraction complete");

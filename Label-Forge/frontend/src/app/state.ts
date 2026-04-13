@@ -99,4 +99,45 @@ export function resetAppState() {
   S.pendingResults = [];
   S.feedbackCount = 0;
   S.selectedDocumentId = null;
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    // sessionStorage unavailable, ignore
+  }
+}
+
+const SESSION_KEY = "labelforge_session";
+
+export function persistState() {
+  try {
+    const toSave = {
+      jobId: S.jobId,
+      jobData: S.jobData,
+      chunks: S.chunks,
+      currentChunkIndex: S.currentChunkIndex,
+      userExamples: S.userExamples,
+      generationResult: S.generationResult,
+      selectedDocumentId: S.selectedDocumentId,
+    };
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(toSave));
+  } catch {
+    // sessionStorage unavailable, ignore
+  }
+}
+
+export function restoreState() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (saved.jobId) S.jobId = saved.jobId;
+    if (saved.jobData) S.jobData = saved.jobData;
+    if (saved.chunks) S.chunks = saved.chunks;
+    if (saved.currentChunkIndex !== undefined) S.currentChunkIndex = saved.currentChunkIndex;
+    if (saved.userExamples) S.userExamples = saved.userExamples;
+    if (saved.generationResult) S.generationResult = saved.generationResult;
+    if (saved.selectedDocumentId) S.selectedDocumentId = saved.selectedDocumentId;
+  } catch {
+    // corrupt data, ignore
+  }
 }

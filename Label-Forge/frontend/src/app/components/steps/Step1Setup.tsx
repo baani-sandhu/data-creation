@@ -7,7 +7,7 @@ import { LFTextarea } from "../ui/LFTextarea";
 import { LFSelect } from "../ui/LFSelect";
 import { LFBadge, LabelColor } from "../ui/LFBadge";
 import { Upload, FileText, Tag, Settings } from "lucide-react";
-import { S } from "../../state";
+import { S, persistState } from "../../state";
 import { getIdToken } from "../../lib/auth";
 import { API_BASE_URL } from "../../lib/api";
 
@@ -99,8 +99,9 @@ export function Step1Setup() {
   const handleToggleSavedDoc = (document: DocumentItem) => {
     setSelectedSavedDocs((prev) => {
       const exists = prev.some((item) => item._id === document._id);
-      if (exists) return prev.filter((item) => item._id !== document._id);
-      return [
+      const nextSelection = exists
+        ? prev.filter((item) => item._id !== document._id)
+        : [
         ...prev,
         {
           _id: document._id,
@@ -108,11 +109,19 @@ export function Step1Setup() {
           file_path: document.file_path,
         },
       ];
+      S.selectedDocumentId = nextSelection.length > 0 ? nextSelection[0]._id : null;
+      persistState();
+      return nextSelection;
     });
   };
 
   const handleRemoveSavedDoc = (documentId: string) => {
-    setSelectedSavedDocs((prev) => prev.filter((item) => item._id !== documentId));
+    setSelectedSavedDocs((prev) => {
+      const nextSelection = prev.filter((item) => item._id !== documentId);
+      S.selectedDocumentId = nextSelection.length > 0 ? nextSelection[0]._id : null;
+      persistState();
+      return nextSelection;
+    });
   };
 
   const handleAddLabel = () => {
@@ -255,6 +264,7 @@ export function Step1Setup() {
       S.currentChunkIndex = 0;
       S.userExamples = [];
       S.selectedDocumentId = null;
+      persistState();
 
       navigate("/wizard/extract");
     } catch (err) {

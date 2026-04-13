@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
 import { LFBadge } from "../ui/LFBadge";
-import { S, ChunkData, ExampleCreate } from "../../state";
+import { S, ChunkData, ExampleCreate, persistState } from "../../state";
 import { getIdToken } from "../../lib/auth";
 import { API_BASE_URL } from "../../lib/api";
 
@@ -94,6 +94,7 @@ export function Step3Sample() {
 
           const data = await response.json();
           S.chunks = data.chunks || [];
+          persistState();
         }
 
         if (S.chunks.length === 0) {
@@ -165,6 +166,7 @@ export function Step3Sample() {
     if (nextIndex < 0 || nextIndex >= chunks.length) return;
     setCurrentIndex(nextIndex);
     S.currentChunkIndex = nextIndex;
+    persistState();
     setJumpValue(String(nextIndex + 1));
     clearCurrent();
     setError("");
@@ -221,6 +223,7 @@ export function Step3Sample() {
       };
 
       S.userExamples = [...S.userExamples, example];
+      persistState();
       clearCurrent();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to save pair.";
@@ -287,6 +290,7 @@ export function Step3Sample() {
         const exampleId = `pair_${example.chunk_id}_${example.chunk_index}_${JSON.stringify(example.pairs)}`;
         return exampleId !== id;
       });
+      persistState();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to remove pair.";
       setError(message);

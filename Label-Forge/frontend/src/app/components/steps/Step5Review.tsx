@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
 import { LFBadge } from "../ui/LFBadge";
-import { S, ResultItem, GenerationResult } from "../../state";
+import { S, ResultItem, GenerationResult, persistState } from "../../state";
 import { getIdToken } from "../../lib/auth";
 import { API_BASE_URL } from "../../lib/api";
 
@@ -219,6 +219,7 @@ export function Step5Review() {
       }
       const data: GenerationResult = await response.json();
       S.generationResult = data;
+      persistState();
       await refreshResultsAndStats();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to re-run generation.";

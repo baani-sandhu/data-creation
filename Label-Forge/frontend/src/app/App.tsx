@@ -14,8 +14,14 @@ export default function App() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (nextUser) => {
-      resetAppState();
-      setUser(nextUser);
+      setUser((prevUser) => {
+        const isSignOut = !nextUser;
+        const isUserSwitch = Boolean(prevUser && nextUser && prevUser.uid !== nextUser.uid);
+        if (isSignOut || isUserSwitch) {
+          resetAppState();
+        }
+        return nextUser;
+      });
       setIsLoading(false);
     });
     return () => unsub();
