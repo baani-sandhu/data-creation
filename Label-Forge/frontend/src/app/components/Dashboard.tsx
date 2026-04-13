@@ -31,6 +31,14 @@ interface Dataset {
   saved_at: string;
 }
 
+interface SavedDocument {
+  _id: string;
+  original_filename: string;
+  file_type: string;
+  chunk_count: number;
+  created_at: string;
+}
+
 interface Stats {
   total_jobs: number;
   total_pairs: number;
@@ -106,9 +114,11 @@ export function Dashboard() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [savedDocuments, setSavedDocuments] = useState<SavedDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [datasetsError, setDatasetsError] = useState("");
+  const [documentsError, setDocumentsError] = useState("");
   const [previewDataset, setPreviewDataset] = useState<Dataset | null>(null);
   const [previewRows, setPreviewRows] = useState<DatasetPreviewRow[]>([]);
   const [previewColumns, setPreviewColumns] = useState<string[]>([]);
@@ -117,11 +127,20 @@ export function Dashboard() {
 
   const fetchJobs = async () => {
     const token = await getIdToken();
-    if (!token) throw new Error("Not authenticated");
+    if (!token) {
+      await signOut();
+      navigate("/");
+      return;
+    }
 
     const response = await fetch(`${API_BASE_URL}/jobs/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
+    if (response.status === 401) {
+      await signOut();
+      navigate("/");
+      return;
+    }
     if (!response.ok) throw new Error("Failed to fetch jobs");
 
     const data = await response.json();
@@ -133,10 +152,19 @@ export function Dashboard() {
     try {
       setDatasetsError("");
       const token = await getIdToken();
-      if (!token) throw new Error("Not authenticated");
+      if (!token) {
+        await signOut();
+        navigate("/");
+        return;
+      }
       const response = await fetch(`${API_BASE_URL}/datasets`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (response.status === 401) {
+        await signOut();
+        navigate("/");
+        return;
+      }
       if (!response.ok) throw new Error("Failed to fetch datasets");
       const data = await response.json();
       setDatasets(data.datasets || []);
@@ -146,12 +174,40 @@ export function Dashboard() {
     }
   };
 
+  const fetchDocuments = async () => {
+    try {
+      setDocumentsError("");
+      const token = await getIdToken();
+      if (!token) {
+        await signOut();
+        navigate("/");
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/documents/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.status === 401) {
+        await signOut();
+        navigate("/");
+        return;
+      }
+      if (!response.ok) throw new Error("Failed to fetch documents");
+
+      const data = await response.json();
+      setSavedDocuments(data.documents || []);
+    } catch {
+      setDocumentsError("Could not load documents right now.");
+      setSavedDocuments([]);
+    }
+  };
+
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true);
         setError("");
-        await Promise.all([fetchJobs(), fetchDatasets()]);
+        await Promise.all([fetchJobs(), fetchDatasets(), fetchDocuments()]);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load jobs");
       } finally {
@@ -276,6 +332,25 @@ export function Dashboard() {
       setDatasets(datasets.filter((dataset) => dataset._id !== datasetId));
     } catch {
       alert("Failed to delete dataset");
+    }
+  };
+
+  const handleDocumentDelete = async (documentId: string) => {
+    if (!confirm("Delete this document? This will not affect jobs already created from it.")) return;
+
+    try {
+      const token = await getIdToken();
+      if (!token) throw new Error("Not authenticated");
+
+      const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to delete document");
+
+      setSavedDocuments(savedDocuments.filter((document) => document._id !== documentId));
+    } catch {
+      alert("Failed to delete document");
     }
   };
 
@@ -523,6 +598,54 @@ export function Dashboard() {
                 </LFCard>
               );
             })}
+          </div>
+        )}
+
+        <div className="mt-10 mb-4">
+          <h2 style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink-dark)" }}>My Documents</h2>
+          {documentsError && (
+            <p style={{ color: "var(--text-muted)", fontSize: "12px", marginTop: "6px" }}>
+              {documentsError}
+            </p>
+          )}
+        </div>
+
+        {savedDocuments.length === 0 ? (
+          <p style={{ color: "var(--text-muted)", fontSize: "14px" }}>
+            No documents saved yet. Upload a document to get started.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {savedDocuments.map((document) => (
+              <LFCard key={document._id}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex gap-3 min-w-0">
+                    <FileText className="w-6 h-6 mt-1 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span
+                          className="truncate"
+                          style={{ fontWeight: 600, color: "var(--ink-dark)", maxWidth: "320px" }}
+                          title={document.original_filename}
+                        >
+                          {document.original_filename}
+                        </span>
+                        <LFBadge color="blue">{document.file_type.toUpperCase()}</LFBadge>
+                      </div>
+                      <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+                        {document.chunk_count} chunks
+                      </p>
+                      <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                        Uploaded {formatDate(document.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                  <LFButton variant="ghost" onClick={() => handleDocumentDelete(document._id)}>
+                    Delete
+                  </LFButton>
+                </div>
+              </LFCard>
+            ))}
           </div>
         )}
 

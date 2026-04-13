@@ -19,20 +19,11 @@ interface DocumentItem {
   file_type: string;
   chunk_count: number;
   created_at: string;
+  file_path: string;
 }
 
-function formatRelativeDate(dateString: string) {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays <= 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays} days ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-  return `${Math.floor(diffDays / 30)} months ago`;
-}
+type SourceMode = "upload" | "saved" | "both";
+type SavedDocSelection = Pick<DocumentItem, "_id" | "original_filename" | "file_path">;
 
 export function Step1Setup() {
   const navigate = useNavigate();
@@ -46,49 +37,50 @@ export function Step1Setup() {
   const [error, setError] = useState("");
   const [isRefining, setIsRefining] = useState(false);
   const [refineError, setRefineError] = useState("");
+  const [sourceMode, setSourceMode] = useState<SourceMode>("upload");
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
-  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(S.selectedDocumentId);
-  const [selectedDocumentName, setSelectedDocumentName] = useState("");
+  const [selectedSavedDocs, setSelectedSavedDocs] = useState<SavedDocSelection[]>([]);
+  const [documentsError, setDocumentsError] = useState("");
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [documentsLoaded, setDocumentsLoaded] = useState(false);
 
   useEffect(() => {
+    if (sourceMode !== "saved" && sourceMode !== "both") return;
+    if (documentsLoaded || isLoadingDocuments) return;
+
     const fetchDocuments = async () => {
+      setIsLoadingDocuments(true);
+      setDocumentsError("");
       try {
         const token = await getIdToken();
-        if (!token) return;
+        if (!token) {
+          setDocumentsError("Please sign in to view saved documents.");
+          return;
+        }
+
         const response = await fetch(`${API_BASE_URL}/documents/`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok) {
-          return;
+          throw new Error("Failed to load saved documents.");
         }
-        const data = await response.json();
-        const docs: DocumentItem[] = data.documents || [];
-        setDocuments(docs);
 
-        if (S.selectedDocumentId) {
-          const match = docs.find((doc) => doc._id === S.selectedDocumentId);
-          if (match) {
-            setSelectedDocumentId(match._id);
-            setSelectedDocumentName(match.original_filename);
-          }
-        }
+        const data = await response.json();
+        setDocuments(data.documents || []);
+        setDocumentsLoaded(true);
       } catch {
-        setDocuments([]);
+        setDocumentsError("Could not load saved documents right now.");
+      } finally {
+        setIsLoadingDocuments(false);
       }
     };
 
     fetchDocuments();
-  }, []);
+  }, [documentsLoaded, isLoadingDocuments, sourceMode]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nextFiles = e.target.files ? Array.from(e.target.files) : [];
     if (!nextFiles.length) return;
-
-    if (S.selectedDocumentId) {
-      S.selectedDocumentId = null;
-      setSelectedDocumentId(null);
-      setSelectedDocumentName("");
-    }
 
     const existingNames = new Set(S.uploadedFiles.map((file) => file.name));
     const newFiles = nextFiles.filter((file) => !existingNames.has(file.name));
@@ -102,6 +94,25 @@ export function Step1Setup() {
     const updated = S.uploadedFiles.filter((file) => file.name !== name);
     S.uploadedFiles = updated;
     setUploadedFiles(updated);
+  };
+
+  const handleToggleSavedDoc = (document: DocumentItem) => {
+    setSelectedSavedDocs((prev) => {
+      const exists = prev.some((item) => item._id === document._id);
+      if (exists) return prev.filter((item) => item._id !== document._id);
+      return [
+        ...prev,
+        {
+          _id: document._id,
+          original_filename: document.original_filename,
+          file_path: document.file_path,
+        },
+      ];
+    });
+  };
+
+  const handleRemoveSavedDoc = (documentId: string) => {
+    setSelectedSavedDocs((prev) => prev.filter((item) => item._id !== documentId));
   };
 
   const handleAddLabel = () => {
@@ -155,26 +166,24 @@ export function Step1Setup() {
     }
   };
 
-  const handleUseDocument = (document: DocumentItem) => {
-    S.selectedDocumentId = document._id;
-    setSelectedDocumentId(document._id);
-    setSelectedDocumentName(document.original_filename);
-    S.uploadedFiles = [];
-    setUploadedFiles([]);
-  };
-
-  const handleClearDocument = () => {
-    S.selectedDocumentId = null;
-    setSelectedDocumentId(null);
-    setSelectedDocumentName("");
-  };
-
   const handleNext = async () => {
     setError("");
-    if (!selectedDocumentId && S.uploadedFiles.length === 0) {
+    const includesUpload = sourceMode === "upload" || sourceMode === "both";
+    const includesSaved = sourceMode === "saved" || sourceMode === "both";
+
+    if (sourceMode === "upload" && S.uploadedFiles.length === 0) {
       setError("Please upload at least one file.");
       return;
     }
+    if (sourceMode === "saved" && selectedSavedDocs.length === 0) {
+      setError("Please select at least one saved document.");
+      return;
+    }
+    if (sourceMode === "both" && S.uploadedFiles.length === 0 && selectedSavedDocs.length === 0) {
+      setError("Please upload at least one file or select at least one saved document.");
+      return;
+    }
+
     const effectiveLabels = labels.length === 0
       ? [
           { name: "question", color: labelColorOptions[0] },
@@ -200,38 +209,39 @@ export function Step1Setup() {
       }
 
       const threshold = parseFloat(confidenceThreshold);
-      let response: Response;
-      if (selectedDocumentId) {
-        response = await fetch(`${API_BASE_URL}/jobs/from-document`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            document_id: selectedDocumentId,
-            fields: effectiveLabels.map((label) => label.name),
-            task_prompt: taskDescription,
-            output_format: exportFormat.toLowerCase(),
-            confidence_threshold: Number.isNaN(threshold) ? 0.75 : threshold,
-          }),
-        });
-      } else {
-        const formData = new FormData();
+      const formData = new FormData();
+
+      if (includesUpload) {
         S.uploadedFiles.forEach((file) => {
           formData.append("files", file);
         });
-        formData.append("fields", effectiveLabels.map((label) => label.name).join(","));
-        formData.append("task_prompt", taskDescription);
-        formData.append("output_format", exportFormat.toLowerCase());
-        formData.append("confidence_threshold", String(Number.isNaN(threshold) ? 0.75 : threshold));
-
-        response = await fetch(`${API_BASE_URL}/jobs/`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
-        });
       }
+
+      if (includesSaved) {
+        for (const document of selectedSavedDocs) {
+          const docResponse = await fetch(`${API_BASE_URL}/documents/${document._id}/file`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!docResponse.ok) {
+            throw new Error(`Failed to load saved document: ${document.original_filename}`);
+          }
+
+          const blob = await docResponse.blob();
+          const file = new File([blob], document.original_filename, { type: blob.type || "application/octet-stream" });
+          formData.append("files", file);
+        }
+      }
+
+      formData.append("fields", effectiveLabels.map((label) => label.name).join(","));
+      formData.append("task_prompt", taskDescription);
+      formData.append("output_format", exportFormat.toLowerCase());
+      formData.append("confidence_threshold", String(Number.isNaN(threshold) ? 0.75 : threshold));
+
+      const response = await fetch(`${API_BASE_URL}/jobs/`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
 
       if (!response.ok) {
         const message = await response.text();
@@ -244,6 +254,7 @@ export function Step1Setup() {
       S.chunks = [];
       S.currentChunkIndex = 0;
       S.userExamples = [];
+      S.selectedDocumentId = null;
 
       navigate("/wizard/extract");
     } catch (err) {
@@ -258,120 +269,168 @@ export function Step1Setup() {
     <div className="space-y-5">
       <LFCard header="Document Upload" accent="#3B82F6">
         <div className="space-y-4">
-          {documents.length > 0 && (
+          <div
+            className="inline-flex rounded-lg border p-1"
+            style={{ borderColor: "var(--border-color)", backgroundColor: "var(--card-bg)" }}
+          >
+            <button
+              onClick={() => setSourceMode("upload")}
+              className="px-3 py-1.5 rounded-md text-sm transition-colors"
+              style={{
+                backgroundColor: sourceMode === "upload" ? "var(--label-blue)" : "transparent",
+                color: "var(--ink-dark)",
+                fontWeight: sourceMode === "upload" ? 600 : 500,
+              }}
+            >
+              Upload New
+            </button>
+            <button
+              onClick={() => setSourceMode("saved")}
+              className="px-3 py-1.5 rounded-md text-sm transition-colors"
+              style={{
+                backgroundColor: sourceMode === "saved" ? "var(--label-blue)" : "transparent",
+                color: "var(--ink-dark)",
+                fontWeight: sourceMode === "saved" ? 600 : 500,
+              }}
+            >
+              Saved Documents
+            </button>
+            <button
+              onClick={() => setSourceMode("both")}
+              className="px-3 py-1.5 rounded-md text-sm transition-colors"
+              style={{
+                backgroundColor: sourceMode === "both" ? "var(--label-blue)" : "transparent",
+                color: "var(--ink-dark)",
+                fontWeight: sourceMode === "both" ? 600 : 500,
+              }}
+            >
+              Both
+            </button>
+          </div>
+
+          {(sourceMode === "saved" || sourceMode === "both") && (
             <div className="space-y-3">
               <p style={{ color: "var(--text-muted)", fontSize: "12px", fontWeight: 500 }}>
-                My Documents - select to reuse without re-uploading
+                Select one or more saved documents
               </p>
-              <div className="flex gap-3 overflow-x-auto pb-1">
-                {documents.map((document) => {
-                  const isSelected = selectedDocumentId === document._id;
-                  return (
+              {documentsError && (
+                <p style={{ color: "var(--text-muted)", fontSize: "12px" }}>
+                  {documentsError}
+                </p>
+              )}
+              {isLoadingDocuments && (
+                <p style={{ color: "var(--text-muted)", fontSize: "12px" }}>
+                  Loading saved documents...
+                </p>
+              )}
+              {!isLoadingDocuments && documents.length === 0 && (
+                <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>
+                  No saved documents found.
+                </p>
+              )}
+              {!isLoadingDocuments && documents.length > 0 && (
+                <div className="space-y-2">
+                  {documents.map((document) => {
+                    const isChecked = selectedSavedDocs.some((item) => item._id === document._id);
+                    return (
+                      <label
+                        key={document._id}
+                        className="flex items-center justify-between gap-3 p-3 rounded-lg border bg-white cursor-pointer"
+                        style={{ borderColor: isChecked ? "var(--primary-blue)" : "var(--border-color)" }}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleSavedDoc(document)}
+                          />
+                          <span className="truncate" title={document.original_filename} style={{ fontSize: "14px", color: "var(--ink-dark)" }}>
+                            {document.original_filename}
+                          </span>
+                        </div>
+                        <LFBadge color="blue">{document.file_type.toUpperCase()}</LFBadge>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedSavedDocs.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {selectedSavedDocs.map((document) => (
                     <div
                       key={document._id}
-                      className="min-w-[240px] p-3 rounded-lg border bg-white"
-                      style={{
-                        borderColor: isSelected ? "var(--primary-blue)" : "var(--border-color)",
-                        boxShadow: isSelected ? "0 0 0 1px var(--primary-blue)" : "none",
-                      }}
+                      className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full border"
+                      style={{ borderColor: "var(--label-blue-border)", backgroundColor: "var(--label-blue)" }}
                     >
-                      <div className="flex items-center justify-between mb-2">
-                        <LFBadge color="blue">{document.file_type.toUpperCase()}</LFBadge>
-                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                          {formatRelativeDate(document.created_at)}
-                        </span>
-                      </div>
-                      <p
-                        className="truncate"
-                        style={{ fontSize: "14px", fontWeight: 500, color: "var(--ink-dark)" }}
-                        title={document.original_filename}
-                      >
+                      <span style={{ fontSize: "12px", color: "var(--ink-dark)" }}>
                         {document.original_filename}
-                      </p>
-                      <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
-                        {document.chunk_count} chunks
-                      </p>
-                      <div className="mt-3">
-                        <LFButton
-                          variant={isSelected ? "secondary" : "ghost"}
-                          className="w-full"
-                          onClick={() => handleUseDocument(document)}
-                        >
-                          Use This
-                        </LFButton>
-                      </div>
+                      </span>
+                      <button
+                        onClick={() => handleRemoveSavedDoc(document._id)}
+                        style={{ fontSize: "12px", color: "var(--primary-blue)" }}
+                      >
+                        X
+                      </button>
                     </div>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {selectedDocumentId && (
-            <div
-              className="flex items-center justify-between rounded-lg border p-3 bg-[var(--label-blue)]"
-              style={{ borderColor: "var(--label-blue-border)" }}
-            >
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4" style={{ color: "var(--primary-blue)" }} />
-                <span style={{ fontSize: "14px", color: "var(--ink-dark)" }}>
-                  Using: {selectedDocumentName}
-                </span>
-              </div>
-              <LFButton variant="ghost" onClick={handleClearDocument}>
-                Clear
-              </LFButton>
-            </div>
-          )}
-          <label
-            className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 cursor-pointer hover:border-[var(--primary-blue)] hover:bg-[var(--label-blue)]/30 transition-all group"
-            style={{ borderColor: "var(--border-color)" }}
-          >
-            <input
-              type="file"
-              className="hidden"
-              onChange={handleFileChange}
-              accept=".pdf,.txt,.md,.csv,.pptx,.docx,.xlsx,.xls"
-              multiple
-            />
-            <div className="w-14 h-14 rounded-full bg-[var(--label-blue)] flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-              <Upload className="w-7 h-7" style={{ color: "var(--primary-blue)" }} />
-            </div>
-            <span style={{ color: "var(--ink-dark)", fontSize: "15px", fontWeight: 500 }}>
-              Click to upload or drag and drop
-            </span>
-            <span style={{ color: "var(--text-muted)", fontSize: "13px" }}>
-              PDF, TXT, MD, CSV, DOCX, PPTX, XLSX, XLS
-            </span>
-          </label>
-          {uploadedFiles.length > 0 && (
-            <div className="space-y-2">
-              {uploadedFiles.map((file) => (
-                <div
-                  key={file.name}
-                  className="flex items-center gap-3 p-3 bg-[var(--label-blue)] rounded-lg border"
-                  style={{ borderColor: "var(--label-blue-border)" }}
-                >
-                  <FileText className="w-5 h-5" style={{ color: "var(--primary-blue)" }} />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <LFBadge color="blue">{file.name.split(".").pop()?.toUpperCase()}</LFBadge>
-                      <span style={{ fontSize: "14px", fontWeight: 500 }}>{file.name}</span>
-                    </div>
-                    <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                      {(file.size / 1024).toFixed(1)} KB
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => handleRemoveFile(file.name)}
-                    className="hover:opacity-70 transition-opacity"
-                    style={{ color: "var(--primary-blue)", fontSize: "14px" }}
-                  >
-                    X
-                  </button>
+          {(sourceMode === "upload" || sourceMode === "both") && (
+            <>
+              <label
+                className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 cursor-pointer hover:border-[var(--primary-blue)] hover:bg-[var(--label-blue)]/30 transition-all group"
+                style={{ borderColor: "var(--border-color)" }}
+              >
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileChange}
+                  accept=".pdf,.txt,.md,.csv,.pptx,.docx,.xlsx,.xls"
+                  multiple
+                />
+                <div className="w-14 h-14 rounded-full bg-[var(--label-blue)] flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                  <Upload className="w-7 h-7" style={{ color: "var(--primary-blue)" }} />
                 </div>
-              ))}
-            </div>
+                <span style={{ color: "var(--ink-dark)", fontSize: "15px", fontWeight: 500 }}>
+                  Click to upload or drag and drop
+                </span>
+                <span style={{ color: "var(--text-muted)", fontSize: "13px" }}>
+                  PDF, TXT, MD, CSV, DOCX, PPTX, XLSX, XLS
+                </span>
+              </label>
+              {uploadedFiles.length > 0 && (
+                <div className="space-y-2">
+                  {uploadedFiles.map((file) => (
+                    <div
+                      key={file.name}
+                      className="flex items-center gap-3 p-3 bg-[var(--label-blue)] rounded-lg border"
+                      style={{ borderColor: "var(--label-blue-border)" }}
+                    >
+                      <FileText className="w-5 h-5" style={{ color: "var(--primary-blue)" }} />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <LFBadge color="blue">{file.name.split(".").pop()?.toUpperCase()}</LFBadge>
+                          <span style={{ fontSize: "14px", fontWeight: 500 }}>{file.name}</span>
+                        </div>
+                        <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                          {(file.size / 1024).toFixed(1)} KB
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveFile(file.name)}
+                        className="hover:opacity-70 transition-opacity"
+                        style={{ color: "var(--primary-blue)", fontSize: "14px" }}
+                      >
+                        X
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </LFCard>

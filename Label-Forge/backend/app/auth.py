@@ -1,11 +1,14 @@
 import os
 import hashlib
+import logging
 from fastapi import HTTPException, Request
 import firebase_admin
 from firebase_admin import auth, credentials
 from google.auth.exceptions import TransportError
 from dotenv import load_dotenv
 from app.database import jobs_col, api_keys_col
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -29,7 +32,8 @@ CREDENTIALS_PATH = (
 
 if not firebase_admin._apps:
     if not os.path.exists(CREDENTIALS_PATH):
-        raise RuntimeError(f"Firebase service account file not found: {CREDENTIALS_PATH}")
+        logger.error("Firebase service account file not found at configured path: %s", CREDENTIALS_PATH)
+        raise RuntimeError("Firebase service account file not found.")
     firebase_admin.initialize_app(credentials.Certificate(CREDENTIALS_PATH))
 
 async def get_current_user(request: Request) -> dict:

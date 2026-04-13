@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
@@ -18,23 +18,26 @@ export function Step4LLMGeneration() {
   );
 
   const syncProgressFromJob = async (token: string, fallbackTotal: number) => {
-    if (!S.jobId) return;
+    if (!S.jobId) return false;
     try {
       const jobResponse = await fetch(`${API_BASE_URL}/jobs/${S.jobId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!jobResponse.ok) return;
+      if (!jobResponse.ok) return false;
 
       const jobData = await jobResponse.json();
       const backendTotal = Number(jobData?.total_chunks ?? jobData?.chunk_count ?? fallbackTotal);
       const normalizedTotal = Math.max(1, Math.floor(backendTotal || fallbackTotal || 1));
       const processed = Math.max(0, Math.floor(Number(jobData?.processed_chunks ?? 0)));
       const nextChunk = Math.min(normalizedTotal, Math.max(1, processed + 1));
+      const complete = processed >= normalizedTotal;
 
       setTotalChunks(normalizedTotal);
       setSimulatedChunk(nextChunk);
+      return complete;
     } catch {
       // Keep existing progress state if polling temporarily fails.
+      return false;
     }
   };
 
@@ -92,11 +95,19 @@ export function Step4LLMGeneration() {
       const normalizedTotal = Math.max(1, Math.floor(resolvedTotal || 1));
       setTotalChunks(normalizedTotal);
       setSimulatedChunk(1);
-      await syncProgressFromJob(token, normalizedTotal);
+      const completedOnInitialSync = await syncProgressFromJob(token, normalizedTotal);
 
-      pollId = window.setInterval(() => {
-        void syncProgressFromJob(token, normalizedTotal);
-      }, 1000);
+      if (!completedOnInitialSync) {
+        pollId = window.setInterval(() => {
+          void (async () => {
+            const completed = await syncProgressFromJob(token, normalizedTotal);
+            if (completed && pollId !== null) {
+              window.clearInterval(pollId);
+              pollId = null;
+            }
+          })();
+        }, 1000);
+      }
 
       const response = await fetch(`${API_BASE_URL}/jobs/${S.jobId}/generate`, {
         method: "POST",
