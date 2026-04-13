@@ -71,7 +71,7 @@ export function Step2Extract() {
   };
 
   return (
-    <div className="space-y-4">
+    <div data-testid="step2-extract" className="space-y-4">
       <LFCard>
         <div className="space-y-4">
           <LFProgress value={progress} />
@@ -89,7 +89,7 @@ export function Step2Extract() {
 
       {chunks.length > 0 && (
         <LFCard header={`Extracted Chunks (${chunks.length})`}>
-          <div className="space-y-3 max-h-[500px] overflow-y-auto">
+          <div data-testid="chunk-list" className="space-y-3 max-h-[500px] overflow-y-auto">
             {chunks.map((chunk) => (
               <div
                 key={chunk._id}
@@ -120,7 +120,7 @@ export function Step2Extract() {
 
       {isComplete && (
         <div className="flex justify-end pt-4">
-          <LFButton onClick={handleNext} disabled={isContinuing}>
+          <LFButton data-testid="start-annotating-button" onClick={handleNext} disabled={isContinuing}>
             {isContinuing ? "Opening Sample Labeling..." : "Continue to Sample Labeling →"}
           </LFButton>
         </div>

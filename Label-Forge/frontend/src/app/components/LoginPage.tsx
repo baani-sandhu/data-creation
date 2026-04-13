@@ -59,6 +59,7 @@ export function LoginPage() {
 
   return (
     <div
+      data-testid="login-page"
       className="min-h-screen flex items-center justify-center px-6"
       style={{ backgroundColor: "#F7F6F2", fontFamily: "'IBM Plex Sans', var(--font-sans)" }}
     >
@@ -78,6 +79,7 @@ export function LoginPage() {
         >
           <button
             type="button"
+            data-testid="email-signin-tab"
             onClick={() => {
               setMode("sign-in");
               setError("");
@@ -125,6 +127,7 @@ export function LoginPage() {
         <form className="space-y-3" onSubmit={handleSubmit}>
           <LFInput
             type="email"
+            data-testid="email-input"
             placeholder="Email address"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -132,6 +135,7 @@ export function LoginPage() {
           />
           <LFInput
             type="password"
+            data-testid="password-input"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -146,7 +150,7 @@ export function LoginPage() {
               required
             />
           )}
-          <LFButton type="submit" className="w-full justify-center" disabled={isSubmitting}>
+          <LFButton type="submit" data-testid="signin-button" className="w-full justify-center" disabled={isSubmitting}>
             {isSubmitting
               ? mode === "sign-up"
                 ? "Creating account..."
@@ -158,7 +162,7 @@ export function LoginPage() {
         </form>
 
         {error && (
-          <div style={{ fontSize: "12px", color: "var(--error-red)" }}>
+          <div data-testid="auth-error" style={{ fontSize: "12px", color: "var(--error-red)" }}>
             {error}
           </div>
         )}

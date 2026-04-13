@@ -232,7 +232,7 @@ export function Step5Review() {
   const pendingCount = stats?.pending ?? pendingResults.length;
 
   return (
-    <div className="space-y-4">
+    <div data-testid="step5-review" className="space-y-4">
       {isLoading && (
         <LFCard>
           <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
@@ -265,7 +265,7 @@ export function Step5Review() {
       {!isLoading && (
         <div className="grid grid-cols-2 gap-4">
           {/* Left Column: Auto Approved */}
-          <div>
+          <div data-testid="approved-column">
             <LFCard>
               <div className="mb-4 p-2 rounded-[6px]" style={{ backgroundColor: "#D4F1E3" }}>
                 <span
@@ -458,7 +458,7 @@ export function Step5Review() {
       )}
 
       <div className="flex justify-end pt-4">
-        <LFButton onClick={handleNext}>Export ?</LFButton>
+        <LFButton data-testid="export-button" onClick={handleNext}>Export ?</LFButton>
       </div>
     </div>
   );

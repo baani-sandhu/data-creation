@@ -470,13 +470,13 @@ export function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "var(--base-bg)", fontFamily: "var(--font-sans)" }}>
+    <div data-testid="dashboard" className="min-h-screen" style={{ backgroundColor: "var(--base-bg)", fontFamily: "var(--font-sans)" }}>
       <div className="max-w-[1200px] mx-auto px-8 py-8">
         <div className="flex items-center justify-between mb-6">
-          <span style={{ fontSize: "14px", color: "var(--ink-dark)", fontWeight: 500 }}>
+          <span data-testid="user-email" style={{ fontSize: "14px", color: "var(--ink-dark)", fontWeight: 500 }}>
             {user?.email || ""}
           </span>
-          <LFButton variant="ghost" onClick={handleSignOut}>
+          <LFButton data-testid="signout-button" variant="ghost" onClick={handleSignOut}>
             Sign Out
           </LFButton>
         </div>
@@ -510,9 +510,9 @@ export function Dashboard() {
           </div>
         )}
 
-        <div className="flex items-center justify-between mb-6">
+        <div data-testid="jobs-section" className="flex items-center justify-between mb-6">
           <h1 style={{ fontSize: "24px", fontWeight: 600, color: "var(--ink-dark)" }}>My Jobs</h1>
-          <LFButton onClick={handleNewJob}>
+          <LFButton data-testid="new-job-button" onClick={handleNewJob}>
             <Plus className="w-4 h-4 mr-2" />
             New Job
           </LFButton>
@@ -524,7 +524,7 @@ export function Dashboard() {
             <h2 style={{ fontSize: "18px", fontWeight: 600, color: "var(--ink-dark)", marginBottom: "8px" }}>
               No jobs yet
             </h2>
-            <p style={{ color: "var(--text-muted)", marginBottom: "16px" }}>
+            <p data-testid="no-jobs-message" style={{ color: "var(--text-muted)", marginBottom: "16px" }}>
               Upload your first document to get started.
             </p>
             <LFButton onClick={handleNewJob}>
@@ -541,7 +541,7 @@ export function Dashboard() {
               const extraFiles = files.length - 1;
 
               return (
-                <LFCard key={job._id} className="hover:shadow-lg transition-shadow">
+                <LFCard key={job._id} data-testid="job-card" className="hover:shadow-lg transition-shadow">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4 flex-1">
                       <FileText className="w-8 h-8 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
@@ -601,110 +601,114 @@ export function Dashboard() {
           </div>
         )}
 
-        <div className="mt-10 mb-4">
-          <h2 style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink-dark)" }}>My Documents</h2>
-          {documentsError && (
-            <p style={{ color: "var(--text-muted)", fontSize: "12px", marginTop: "6px" }}>
-              {documentsError}
-            </p>
-          )}
-        </div>
-
-        {savedDocuments.length === 0 ? (
-          <p style={{ color: "var(--text-muted)", fontSize: "14px" }}>
-            No documents saved yet. Upload a document to get started.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {savedDocuments.map((document) => (
-              <LFCard key={document._id}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex gap-3 min-w-0">
-                    <FileText className="w-6 h-6 mt-1 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span
-                          className="truncate"
-                          style={{ fontWeight: 600, color: "var(--ink-dark)", maxWidth: "320px" }}
-                          title={document.original_filename}
-                        >
-                          {document.original_filename}
-                        </span>
-                        <LFBadge color="blue">{document.file_type.toUpperCase()}</LFBadge>
-                      </div>
-                      <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
-                        {document.chunk_count} chunks
-                      </p>
-                      <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                        Uploaded {formatDate(document.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                  <LFButton variant="ghost" onClick={() => handleDocumentDelete(document._id)}>
-                    Delete
-                  </LFButton>
-                </div>
-              </LFCard>
-            ))}
+        <div data-testid="documents-section">
+          <div className="mt-10 mb-4">
+            <h2 style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink-dark)" }}>My Documents</h2>
+            {documentsError && (
+              <p style={{ color: "var(--text-muted)", fontSize: "12px", marginTop: "6px" }}>
+                {documentsError}
+              </p>
+            )}
           </div>
-        )}
 
-        <div className="mt-10 mb-4">
-          <h2 style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink-dark)" }}>My Datasets</h2>
-          {datasetsError && (
-            <p style={{ color: "var(--text-muted)", fontSize: "12px", marginTop: "6px" }}>
-              {datasetsError}
+          {savedDocuments.length === 0 ? (
+            <p style={{ color: "var(--text-muted)", fontSize: "14px" }}>
+              No documents saved yet. Upload a document to get started.
             </p>
-          )}
-        </div>
-
-        {datasets.length === 0 ? (
-          <p style={{ color: "var(--text-muted)", fontSize: "14px" }}>
-            No datasets saved yet. Complete a job and click Save to Gallery in the export screen.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {datasets.map((dataset) => (
-              <LFCard key={dataset._id}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex gap-3">
-                    <FileText className="w-6 h-6 mt-1" style={{ color: "var(--text-muted)" }} />
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span style={{ fontWeight: 600, color: "var(--ink-dark)" }}>{dataset.filename || "Dataset"}</span>
-                        <LFBadge color="blue">{dataset.output_format.toUpperCase()}</LFBadge>
-                      </div>
-                      <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
-                        {dataset.pair_count} pairs
-                      </p>
-                      <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                        Saved {formatDate(dataset.saved_at)}
-                      </p>
-                      <div className="flex gap-1 mt-2">
-                        {dataset.fields?.map((field) => (
-                          <LFBadge key={`${dataset._id}-${field}`} color="blue" className="text-xs">
-                            {field}
-                          </LFBadge>
-                        ))}
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {savedDocuments.map((document) => (
+                <LFCard key={document._id}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex gap-3 min-w-0">
+                      <FileText className="w-6 h-6 mt-1 flex-shrink-0" style={{ color: "var(--text-muted)" }} />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span
+                            className="truncate"
+                            style={{ fontWeight: 600, color: "var(--ink-dark)", maxWidth: "320px" }}
+                            title={document.original_filename}
+                          >
+                            {document.original_filename}
+                          </span>
+                          <LFBadge color="blue">{document.file_type.toUpperCase()}</LFBadge>
+                        </div>
+                        <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+                          {document.chunk_count} chunks
+                        </p>
+                        <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                          Uploaded {formatDate(document.created_at)}
+                        </p>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <LFButton variant="ghost" onClick={() => handleDatasetView(dataset)}>
-                      View
-                    </LFButton>
-                    <LFButton variant="ghost" onClick={() => handleDatasetDownload(dataset._id)}>
-                      Download
-                    </LFButton>
-                    <LFButton variant="ghost" onClick={() => handleDatasetDelete(dataset._id)}>
+                    <LFButton variant="ghost" onClick={() => handleDocumentDelete(document._id)}>
                       Delete
                     </LFButton>
                   </div>
-                </div>
-              </LFCard>
-            ))}
+                </LFCard>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div data-testid="datasets-section">
+          <div className="mt-10 mb-4">
+            <h2 style={{ fontSize: "20px", fontWeight: 600, color: "var(--ink-dark)" }}>My Datasets</h2>
+            {datasetsError && (
+              <p style={{ color: "var(--text-muted)", fontSize: "12px", marginTop: "6px" }}>
+                {datasetsError}
+              </p>
+            )}
           </div>
-        )}
+
+          {datasets.length === 0 ? (
+            <p style={{ color: "var(--text-muted)", fontSize: "14px" }}>
+              No datasets saved yet. Complete a job and click Save to Gallery in the export screen.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {datasets.map((dataset) => (
+                <LFCard key={dataset._id}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex gap-3">
+                      <FileText className="w-6 h-6 mt-1" style={{ color: "var(--text-muted)" }} />
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span style={{ fontWeight: 600, color: "var(--ink-dark)" }}>{dataset.filename || "Dataset"}</span>
+                          <LFBadge color="blue">{dataset.output_format.toUpperCase()}</LFBadge>
+                        </div>
+                        <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+                          {dataset.pair_count} pairs
+                        </p>
+                        <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                          Saved {formatDate(dataset.saved_at)}
+                        </p>
+                        <div className="flex gap-1 mt-2">
+                          {dataset.fields?.map((field) => (
+                            <LFBadge key={`${dataset._id}-${field}`} color="blue" className="text-xs">
+                              {field}
+                            </LFBadge>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <LFButton variant="ghost" onClick={() => handleDatasetView(dataset)}>
+                        View
+                      </LFButton>
+                      <LFButton variant="ghost" onClick={() => handleDatasetDownload(dataset._id)}>
+                        Download
+                      </LFButton>
+                      <LFButton variant="ghost" onClick={() => handleDatasetDelete(dataset._id)}>
+                        Delete
+                      </LFButton>
+                    </div>
+                  </div>
+                </LFCard>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       {previewDataset && (
         <div

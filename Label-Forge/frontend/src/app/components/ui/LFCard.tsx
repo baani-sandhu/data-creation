@@ -1,17 +1,18 @@
 import React from "react";
 
-interface LFCardProps {
+interface LFCardProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   header?: string;
   className?: string;
   accent?: string; // Optional accent color for the header
 }
 
-export function LFCard({ children, header, className = "", accent }: LFCardProps) {
+export function LFCard({ children, header, className = "", accent, ...props }: LFCardProps) {
   return (
     <div
       className={`bg-white border rounded-lg shadow-sm hover:shadow-md transition-shadow ${className}`}
       style={{ borderColor: "var(--border-color)" }}
+      {...props}
     >
       {header && (
         <div

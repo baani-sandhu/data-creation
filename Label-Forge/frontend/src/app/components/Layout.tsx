@@ -31,7 +31,7 @@ export function Layout() {
         }}
       >
         <div className="flex items-center gap-3">
-          <LFButton variant="ghost" onClick={() => navigate("/")} className="flex items-center gap-2">
+          <LFButton data-testid="back-to-dashboard" variant="ghost" onClick={() => navigate("/")} className="flex items-center gap-2">
             <ArrowLeft className="w-4 h-4" />
             My Datasets
           </LFButton>

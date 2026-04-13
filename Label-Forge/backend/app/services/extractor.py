@@ -62,7 +62,10 @@ def _extract_docx(file_bytes: bytes) -> str:
         text = para.text.strip()
         if not text:
             continue
-        if "Heading" in (para.style.name or ""):
+        style_name = ""
+        if para.style is not None and para.style.name is not None:
+            style_name = para.style.name
+        if "Heading" in style_name:
             lines.append(f"\n{text}\n")
         else:
             lines.append(text)

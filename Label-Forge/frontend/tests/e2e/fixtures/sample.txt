@@ -1,0 +1,2 @@
+This is a sample document for testing LabelForge.
+It contains multiple sentences that can be extracted as training pairs. Customer service agents should greet customers warmly. Always ask how you can help.

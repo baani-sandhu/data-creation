@@ -171,7 +171,7 @@ export function Step4LLMGeneration() {
   };
 
   return (
-    <div className="space-y-4">
+    <div data-testid="step4-generation" className="space-y-4">
       {isLoading && (
         <LFCard>
           <div className="flex flex-col items-center justify-center gap-4 py-10">
@@ -217,7 +217,7 @@ export function Step4LLMGeneration() {
 
       {!isLoading && !error && generationResult && (
         <>
-          <div className="grid grid-cols-4 gap-4">
+          <div data-testid="generation-complete" className="grid grid-cols-4 gap-4">
             <LFCard>
               <div className="text-center">
                 <div
@@ -231,6 +231,7 @@ export function Step4LLMGeneration() {
                   TOTAL
                 </div>
                 <div
+                  data-testid="total-pairs-stat"
                   style={{
                     fontFamily: "var(--font-mono)",
                     fontSize: "32px",
@@ -315,7 +316,7 @@ export function Step4LLMGeneration() {
           </div>
 
           <div className="flex justify-end pt-4">
-            <LFButton onClick={handleNext} disabled={isLoading}>
+            <LFButton data-testid="review-button" onClick={handleNext} disabled={isLoading}>
               Review Results
             </LFButton>
           </div>

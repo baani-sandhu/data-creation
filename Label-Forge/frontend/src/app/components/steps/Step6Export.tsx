@@ -228,7 +228,7 @@ export function Step6Export() {
   );
 
   return (
-    <div className="space-y-4">
+    <div data-testid="step6-export" className="space-y-4">
       <div className="grid grid-cols-4 gap-4">
         <LFCard>
           <div className="text-center">
@@ -327,7 +327,7 @@ export function Step6Export() {
         </LFCard>
       </div>
 
-      <LFCard header="Export Preview">
+      <LFCard data-testid="export-preview" header="Export Preview">
         <div className="p-4 rounded-[6px]" style={{ backgroundColor: "var(--ink-dark)" }}>
           {isPreviewLoading && (
             <p style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "#93c5fd" }}>
@@ -361,11 +361,12 @@ export function Step6Export() {
         <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
           Export format: {fmt.toUpperCase()} (selected in setup)
         </span>
-        <LFButton onClick={handleDownload} className="flex items-center gap-2" disabled={isDownloading}>
+        <LFButton data-testid="download-button" onClick={handleDownload} className="flex items-center gap-2" disabled={isDownloading}>
           <Download className="w-4 h-4" />
           {isDownloading ? "Downloading..." : downloadLabel}
         </LFButton>
         <LFButton
+          data-testid="save-to-gallery-button"
           variant="secondary"
           onClick={handleSaveToGallery}
           disabled={isSaving || isSavedToGallery}

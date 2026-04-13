@@ -508,7 +508,7 @@ export function Step3Sample() {
   }
 
   return (
-    <div className="space-y-4">
+    <div data-testid="step3-sample" className="space-y-4">
       <div
         className="rounded-[12px] border px-4 py-3"
         style={{
@@ -756,11 +756,11 @@ export function Step3Sample() {
               </LFButton>
             </div>
 
-            <LFButton onClick={handleGenerate} disabled={!canGenerate || isGenerating}>
+            <LFButton data-testid="generate-button" onClick={handleGenerate} disabled={!canGenerate || isGenerating}>
               {isGenerating ? "Saving..." : "Save & Generate →"}
             </LFButton>
 
-            <LFButton variant="secondary" onClick={handleSkipToGenerate}>
+            <LFButton data-testid="skip-to-generate-button" variant="secondary" onClick={handleSkipToGenerate}>
               Skip to Generate →
             </LFButton>
             <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>

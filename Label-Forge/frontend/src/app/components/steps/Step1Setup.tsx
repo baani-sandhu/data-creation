@@ -266,7 +266,7 @@ export function Step1Setup() {
   };
 
   return (
-    <div className="space-y-5">
+    <div data-testid="step1-setup" className="space-y-5">
       <LFCard header="Document Upload" accent="#3B82F6">
         <div className="space-y-4">
           <div
@@ -274,6 +274,7 @@ export function Step1Setup() {
             style={{ borderColor: "var(--border-color)", backgroundColor: "var(--card-bg)" }}
           >
             <button
+              data-testid="tab-upload-new"
               onClick={() => setSourceMode("upload")}
               className="px-3 py-1.5 rounded-md text-sm transition-colors"
               style={{
@@ -285,6 +286,7 @@ export function Step1Setup() {
               Upload New
             </button>
             <button
+              data-testid="tab-saved-documents"
               onClick={() => setSourceMode("saved")}
               className="px-3 py-1.5 rounded-md text-sm transition-colors"
               style={{
@@ -296,6 +298,7 @@ export function Step1Setup() {
               Saved Documents
             </button>
             <button
+              data-testid="tab-both"
               onClick={() => setSourceMode("both")}
               className="px-3 py-1.5 rounded-md text-sm transition-colors"
               style={{
@@ -309,7 +312,7 @@ export function Step1Setup() {
           </div>
 
           {(sourceMode === "saved" || sourceMode === "both") && (
-            <div className="space-y-3">
+            <div data-testid="saved-docs-list" className="space-y-3">
               <p style={{ color: "var(--text-muted)", fontSize: "12px", fontWeight: 500 }}>
                 Select one or more saved documents
               </p>
@@ -379,7 +382,7 @@ export function Step1Setup() {
           )}
 
           {(sourceMode === "upload" || sourceMode === "both") && (
-            <>
+            <div data-testid="upload-section">
               <label
                 className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 cursor-pointer hover:border-[var(--primary-blue)] hover:bg-[var(--label-blue)]/30 transition-all group"
                 style={{ borderColor: "var(--border-color)" }}
@@ -402,7 +405,7 @@ export function Step1Setup() {
                 </span>
               </label>
               {uploadedFiles.length > 0 && (
-                <div className="space-y-2">
+                <div data-testid="file-list" className="space-y-2">
                   {uploadedFiles.map((file) => (
                     <div
                       key={file.name}
@@ -430,18 +433,19 @@ export function Step1Setup() {
                   ))}
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       </LFCard>
 
-      <LFCard header="Labeling Task Description" accent="#8B5CF6">
+      <LFCard data-testid="task-prompt-section" header="Labeling Task Description" accent="#8B5CF6">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-lg bg-[var(--label-purple)] flex items-center justify-center flex-shrink-0">
             <FileText className="w-5 h-5" style={{ color: "var(--accent-purple)" }} />
           </div>
           <div className="flex-1 space-y-2">
             <LFTextarea
+              data-testid="task-prompt-input"
               rows={4}
               placeholder="Describe what you want to extract and label from the documents..."
               value={taskDescription}
@@ -449,6 +453,7 @@ export function Step1Setup() {
             />
             <div className="flex items-center gap-2">
               <LFButton
+                data-testid="refine-prompt-button"
                 variant="ghost"
                 onClick={handleRefinePrompt}
                 disabled={isRefining}
@@ -465,7 +470,7 @@ export function Step1Setup() {
         </div>
       </LFCard>
 
-      <LFCard header="Label Class Builder" accent="#14B8A6">
+      <LFCard data-testid="fields-section" header="Label Class Builder" accent="#14B8A6">
         <div className="space-y-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-lg bg-[var(--label-teal)] flex items-center justify-center flex-shrink-0">
@@ -474,12 +479,13 @@ export function Step1Setup() {
             <div className="flex-1 space-y-3">
               <div className="flex gap-2">
                 <LFInput
+                  data-testid="field-input"
                   placeholder="Enter label name (e.g., 'Invoice Number', 'Date')"
                   value={labelInput}
                   onChange={(e) => setLabelInput(e.target.value)}
                   onKeyPress={(e) => e.key === "Enter" && handleAddLabel()}
                 />
-                <LFButton onClick={handleAddLabel} disabled={!labelInput.trim() || labels.length >= 7}>
+                <LFButton data-testid="add-field-button" onClick={handleAddLabel} disabled={!labelInput.trim() || labels.length >= 7}>
                   Add
                 </LFButton>
               </div>
@@ -487,7 +493,7 @@ export function Step1Setup() {
                 If no labels are added, "question" and "answer" will be used by default.
               </p>
               {labels.length > 0 && (
-                <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg border" style={{ borderColor: "var(--border-color)" }}>
+                <div data-testid="fields-list" className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg border" style={{ borderColor: "var(--border-color)" }}>
                   {labels.map((label, index) => (
                     <LFBadge
                       key={index}
@@ -509,7 +515,7 @@ export function Step1Setup() {
         </div>
       </LFCard>
 
-      <LFCard header="Export Configuration" accent="#F59E0B">
+      <LFCard data-testid="export-config-section" header="Export Configuration" accent="#F59E0B">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-lg bg-[var(--label-amber)] flex items-center justify-center flex-shrink-0">
             <Settings className="w-5 h-5" style={{ color: "var(--warning-amber)" }} />
@@ -549,7 +555,7 @@ export function Step1Setup() {
       </LFCard>
 
       <div className="flex justify-end pt-4">
-        <LFButton onClick={handleNext} disabled={isSubmitting}>
+        <LFButton data-testid="next-button" onClick={handleNext} disabled={isSubmitting}>
           {isSubmitting ? "Creating Job..." : "Extract & Chunk Document ->"}
         </LFButton>
       </div>
