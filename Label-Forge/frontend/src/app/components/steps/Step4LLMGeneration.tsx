@@ -17,53 +17,8 @@ export function Step4LLMGeneration() {
     S.generationResult ?? null
   );
 
-  const syncProgressFromJob = async (token: string, fallbackTotal: number) => {
-    if (!S.jobId) return false;
-    try {
-      const jobResponse = await fetch(`${API_BASE_URL}/jobs/${S.jobId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!jobResponse.ok) return false;
-
-      const jobData = await jobResponse.json();
-      const backendTotal = Number(jobData?.total_chunks ?? jobData?.chunk_count ?? fallbackTotal);
-      const normalizedTotal = Math.max(1, Math.floor(backendTotal || fallbackTotal || 1));
-      const processed = Math.max(0, Math.floor(Number(jobData?.processed_chunks ?? 0)));
-      const nextChunk = Math.min(normalizedTotal, Math.max(1, processed + 1));
-      const complete = processed >= normalizedTotal;
-
-      setTotalChunks(normalizedTotal);
-      setSimulatedChunk(nextChunk);
-      return complete;
-    } catch {
-      // Keep existing progress state if polling temporarily fails.
-      return false;
-    }
-  };
-
-  const extractErrorMessage = async (response: Response) => {
-    try {
-      const data = await response.json();
-      if (typeof data?.detail === "string") {
-        return data.detail;
-      }
-    } catch {
-      // Fall through to text parsing.
-    }
-
-    try {
-      const text = await response.text();
-      if (text) {
-        return text;
-      }
-    } catch {
-      // Ignore text parsing errors.
-    }
-
-    return "";
-  };
-
   const runGeneration = async () => {
+    console.log("runGeneration called");
     setError("");
     if (!S.jobId) {
       setError("No job found. Please create a job first.");
@@ -72,63 +27,50 @@ export function Step4LLMGeneration() {
     }
 
     setIsLoading(true);
-    let pollId: number | null = null;
     try {
       const token = await getIdToken();
       if (!token) {
         throw new Error("Please sign in to generate pairs.");
       }
 
-      let resolvedTotal = Number(S.jobData?.total_chunks ?? 0);
-      if (!Number.isFinite(resolvedTotal) || resolvedTotal <= 0) {
-        const jobResponse = await fetch(`${API_BASE_URL}/jobs/${S.jobId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (jobResponse.ok) {
-          const jobData = await jobResponse.json();
-          resolvedTotal = Number(jobData?.chunk_count ?? 0);
-          if (S.jobData) {
-            S.jobData.total_chunks = resolvedTotal;
-          }
-        }
-      }
-      const normalizedTotal = Math.max(1, Math.floor(resolvedTotal || 1));
+      const normalizedTotal = Math.max(1, Math.floor(Number(S.jobData?.total_chunks ?? 1) || 1));
       setTotalChunks(normalizedTotal);
       setSimulatedChunk(1);
-      const completedOnInitialSync = await syncProgressFromJob(token, normalizedTotal);
-
-      if (!completedOnInitialSync) {
-        pollId = window.setInterval(() => {
-          void (async () => {
-            const completed = await syncProgressFromJob(token, normalizedTotal);
-            if (completed && pollId !== null) {
-              window.clearInterval(pollId);
-              pollId = null;
-            }
-          })();
-        }, 1000);
-      }
-
-      const response = await fetch(`${API_BASE_URL}/jobs/${S.jobId}/generate`, {
+      const generateUrl = `${API_BASE_URL}/jobs/${S.jobId}/generate`;
+      console.log("Calling generate:", generateUrl);
+      const response = await fetch(generateUrl, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
       });
-      if (!response.ok) {
-        const message = await extractErrorMessage(response);
-        throw new Error(message || "Failed to generate pairs.");
+      let data: unknown = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
       }
-      const data: GenerationResult = await response.json();
-      S.generationResult = data;
-      setGenerationResult(data);
+      console.log("Generate response:", response.status, data);
+      if (!response.ok) {
+        const detail =
+          typeof data === "object" &&
+          data !== null &&
+          "detail" in data &&
+          typeof (data as { detail?: unknown }).detail === "string"
+            ? (data as { detail: string }).detail
+            : "";
+        throw new Error(detail || "Failed to generate pairs.");
+      }
+      const result = data as GenerationResult;
+      S.generationResult = result;
+      setGenerationResult(result);
       setSimulatedChunk(normalizedTotal);
       await new Promise((resolve) => window.setTimeout(resolve, 500));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to generate pairs.";
       setError(message);
     } finally {
-      if (pollId !== null) {
-        window.clearInterval(pollId);
-      }
       setIsLoading(false);
     }
   };
