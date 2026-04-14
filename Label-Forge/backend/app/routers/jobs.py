@@ -218,6 +218,10 @@ async def process_job(job_id: str, saved_files: list[dict], user_id: str):
             }}
         )
         print(f"[process_job] DONE status=chunked")
+        print("ENTER GENERATION STEP")
+        from app.routers.generation import run_generation_for_job
+        await run_generation_for_job(job_id, user_id)
+        print(f"[process_job] DONE status=review")
     except Exception as e:
         full_trace = traceback.format_exc()
         print(f"[process_job] FATAL ERROR: {e}")
@@ -331,6 +335,7 @@ async def create_job(
 async def create_job_from_document(
     request: Request,
     body: CreateJobFromDocumentBody,
+    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
 ):
     field_list = [f.strip() for f in body.fields if isinstance(f, str) and f.strip()]
@@ -412,6 +417,9 @@ async def create_job_from_document(
         "updated_at": now,
     }
     await jobs_col.insert_one(job_doc)
+    from app.routers.generation import run_generation_for_job
+    background_tasks.add_task(run_generation_for_job, job_id, user["uid"])
+    print(f"[create_job_from_document] scheduled generation job_id={job_id}")
 
     return {
         "job_id": job_id,

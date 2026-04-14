@@ -43,38 +43,62 @@ export function Step4LLMGeneration() {
       if (!token) {
         throw new Error("Please sign in to generate pairs.");
       }
+      const headers = { Authorization: `Bearer ${token}` };
 
-      const generateUrl = `${API_BASE_URL}/jobs/${S.jobId}/generate`;
-      console.log("Calling generate:", generateUrl);
-      const response = await fetch(generateUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      let data: unknown = null;
-      try {
-        data = await response.json();
-      } catch {
-        data = null;
+      const POLL_INTERVAL_MS = 1500;
+      const POLL_TIMEOUT_MS = 180000;
+      const startedAt = Date.now();
+
+      while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+        const jobResponse = await fetch(`${API_BASE_URL}/jobs/${S.jobId}`, {
+          headers,
+        });
+        if (!jobResponse.ok) {
+          const detail = await jobResponse.text();
+          throw new Error(detail || "Failed to fetch job status.");
+        }
+
+        const jobData = await jobResponse.json();
+        const status = String(jobData?.status || "");
+        console.log("Step4 status poll:", status);
+
+        if (status === "failed") {
+          throw new Error(
+            typeof jobData?.error === "string" && jobData.error.trim()
+              ? jobData.error
+              : "Failed to generate pairs."
+          );
+        }
+
+        if (status === "review" || status === "done") {
+          const statsResponse = await fetch(`${API_BASE_URL}/jobs/${S.jobId}/results/stats`, {
+            headers,
+          });
+          if (!statsResponse.ok) {
+            const detail = await statsResponse.text();
+            throw new Error(detail || "Failed to load generation stats.");
+          }
+          const statsData = await statsResponse.json();
+          const result: GenerationResult = {
+            job_id: S.jobId,
+            status,
+            total_pairs: Number(statsData?.total || 0),
+            high_confidence: Number(statsData?.approved || 0),
+            low_confidence: Number(statsData?.pending || 0),
+            chunks_processed: Number(jobData?.processed_chunks || 0),
+            errors: Array.isArray(jobData?.errors) ? jobData.errors : null,
+          };
+          S.generationResult = result;
+          persistState();
+          setGenerationResult(result);
+          await new Promise((resolve) => window.setTimeout(resolve, 500));
+          return;
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, POLL_INTERVAL_MS));
       }
-      console.log("Generate response:", response.status, data);
-      if (!response.ok) {
-        const detail =
-          typeof data === "object" &&
-          data !== null &&
-          "detail" in data &&
-          typeof (data as { detail?: unknown }).detail === "string"
-            ? (data as { detail: string }).detail
-            : "";
-        throw new Error(detail || "Failed to generate pairs.");
-      }
-      const result = data as GenerationResult;
-      S.generationResult = result;
-      persistState();
-      setGenerationResult(result);
-      await new Promise((resolve) => window.setTimeout(resolve, 500));
+
+      throw new Error("Generation timed out. Please retry.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to generate pairs.";
       setError(message);

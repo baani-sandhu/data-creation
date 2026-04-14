@@ -30,10 +30,11 @@ def _normalize_job_example(input_text: str, output_pair: dict) -> dict:
         "output": output_pair,
     }
 
-@router.post("/{job_id}/generate")
-@limiter.limit("5/minute")
-async def generate(request: Request, job_id: str, user: dict = Depends(get_current_user)):
-    job = await get_owned_job(job_id, user)
+async def run_generation_for_job(job_id: str, user_id: str):
+    print(f"[generation] ENTER job_id={job_id} user_id={user_id}")
+    job = await jobs_col.find_one({"_id": job_id, "user_id": user_id})
+    if not job:
+        raise HTTPException(404, "Job not found")
 
     examples = [{"pair": example} for example in job.get("examples", [])]
     has_examples = len(examples) > 0
@@ -71,8 +72,12 @@ async def generate(request: Request, job_id: str, user: dict = Depends(get_curre
     processed_chunks = 0
     total_chunks = len(chunks_to_process)
 
-    await jobs_col.update_one(
-        {"_id": job_id, "user_id": user["uid"]},
+    lock_result = await jobs_col.update_one(
+        {
+            "_id": job_id,
+            "user_id": user_id,
+            "status": {"$nin": ["generating", "done"]},
+        },
         {"$set": {
             "status": "generating",
             "processed_chunks": 0,
@@ -80,6 +85,21 @@ async def generate(request: Request, job_id: str, user: dict = Depends(get_curre
             "updated_at": now,
         }}
     )
+    if lock_result.matched_count == 0:
+        current_job = await jobs_col.find_one({"_id": job_id, "user_id": user_id})
+        current_status = current_job.get("status") if current_job else "unknown"
+        print(f"[generation] SKIP job_id={job_id} status={current_status}")
+        return {
+            "job_id": job_id,
+            "status": current_status,
+            "total_pairs": 0,
+            "high_confidence": 0,
+            "low_confidence": 0,
+            "chunks_processed": int((current_job or {}).get("processed_chunks") or 0),
+            "errors": None,
+            "skipped": True,
+        }
+    print(f"[generation] STARTED job_id={job_id} total_chunks={total_chunks}")
 
     semaphore = asyncio.Semaphore(3)
     progress_lock = asyncio.Lock()
@@ -133,7 +153,7 @@ async def generate(request: Request, job_id: str, user: dict = Depends(get_curre
                 async with progress_lock:
                     processed_chunks += 1
                     await jobs_col.update_one(
-                        {"_id": job_id, "user_id": user["uid"]},
+                        {"_id": job_id, "user_id": user_id},
                         {"$set": {
                             "processed_chunks": processed_chunks,
                             "total_chunks": total_chunks,
@@ -160,7 +180,7 @@ async def generate(request: Request, job_id: str, user: dict = Depends(get_curre
     low_conf = [r for r in all_results if not r["approved"]]
 
     await jobs_col.update_one(
-        {"_id": job_id, "user_id": user["uid"]},
+        {"_id": job_id, "user_id": user_id},
         {"$set": {
             "status": "review",
             "processed_chunks": processed_chunks,
@@ -168,6 +188,7 @@ async def generate(request: Request, job_id: str, user: dict = Depends(get_curre
             "updated_at": datetime.now(timezone.utc),
         }}
     )
+    print(f"[generation] DONE job_id={job_id} status=review total_pairs={len(all_results)}")
 
     return {
         "job_id": job_id,
@@ -179,6 +200,12 @@ async def generate(request: Request, job_id: str, user: dict = Depends(get_curre
         "run_number": run_number,
         "errors": errors if errors else None,
     }
+
+@router.post("/{job_id}/generate")
+@limiter.limit("5/minute")
+async def generate(request: Request, job_id: str, user: dict = Depends(get_current_user)):
+    await get_owned_job(job_id, user)
+    return await run_generation_for_job(job_id, user["uid"])
 
 @router.get("/{job_id}/results")
 async def get_results(
