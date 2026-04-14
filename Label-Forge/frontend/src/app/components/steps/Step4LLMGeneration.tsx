@@ -46,7 +46,7 @@ export function Step4LLMGeneration() {
       const headers = { Authorization: `Bearer ${token}` };
 
       const POLL_INTERVAL_MS = 1500;
-      const POLL_TIMEOUT_MS = 180000;
+      const POLL_TIMEOUT_MS = 900000;
       const startedAt = Date.now();
 
       while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
