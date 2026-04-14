@@ -12,6 +12,7 @@ from app.auth import get_current_user, get_owned_job
 from datetime import datetime, timezone
 from app.limiter import limiter
 import uuid
+import asyncio
 
 router = APIRouter(prefix="/jobs", tags=["generation"])
 
@@ -80,59 +81,74 @@ async def generate(request: Request, job_id: str, user: dict = Depends(get_curre
         }}
     )
 
-    for chunk in chunks_to_process:
-        try:
-            print(f"Processing chunk {chunk['chunk_index']} - {len(chunk['text'].split())} words")
-            if has_examples:
-                user_message = build_user_message(chunk["text"], examples)
-            else:
-                user_message = build_zero_shot_user_message(
-                    chunk["text"],
-                    job["fields"],
-                )
-            pairs = extract_pairs(system_prompt, user_message)
-            print(f"Got {len(pairs)} pairs from chunk {chunk['chunk_index']}")
+    semaphore = asyncio.Semaphore(3)
+    progress_lock = asyncio.Lock()
 
-            for pair in pairs:
-                confidence = float(pair.pop("confidence", 0.0))
-                reasoning = pair.pop("reasoning", "")
+    async def process_single_chunk(chunk: dict) -> tuple[list[dict], dict | None]:
+        nonlocal processed_chunks
+        async with semaphore:
+            try:
+                print(f"Processing chunk {chunk['chunk_index']} - {len(chunk['text'].split())} words")
+                if has_examples:
+                    user_message = build_user_message(chunk["text"], examples)
+                else:
+                    user_message = build_zero_shot_user_message(
+                        chunk["text"],
+                        job["fields"],
+                    )
+                pairs = await extract_pairs(system_prompt, user_message)
+                print(f"Got {len(pairs)} pairs from chunk {chunk['chunk_index']}")
 
-                # whatever is left in pair are the actual fields
-                result_doc = {
-                    "_id": str(uuid.uuid4()),
-                    "job_id": job_id,
+                result_docs = []
+                for pair in pairs:
+                    confidence = float(pair.pop("confidence", 0.0))
+                    reasoning = pair.pop("reasoning", "")
+
+                    # whatever is left in pair are the actual fields
+                    result_docs.append({
+                        "_id": str(uuid.uuid4()),
+                        "job_id": job_id,
+                        "chunk_id": chunk["_id"],
+                        "pair": pair,
+                        "confidence": confidence,
+                        "reasoning": reasoning,
+                        "source": "model",
+                        "human_reviewed": False,
+                        "approved": confidence >= job["confidence_threshold"],
+                        "discarded": False,
+                        "used_as_example": False,
+                        "run_number": run_number,
+                        "created_at": now,
+                    })
+
+                return result_docs, None
+            except Exception as e:
+                print(f"ERROR on chunk {chunk['chunk_index']}: {str(e)}")
+                return [], {
                     "chunk_id": chunk["_id"],
-                    "pair": pair,
-                    "confidence": confidence,
-                    "reasoning": reasoning,
-                    "source": "model",
-                    "human_reviewed": False,
-                    "approved": confidence >= job["confidence_threshold"],
-                    "discarded": False,
-                    "used_as_example": False,
-                    "run_number": run_number,
-                    "created_at": now,
+                    "chunk_index": chunk["chunk_index"],
+                    "error": str(e),
                 }
-                all_results.append(result_doc)
+            finally:
+                async with progress_lock:
+                    processed_chunks += 1
+                    await jobs_col.update_one(
+                        {"_id": job_id, "user_id": user["uid"]},
+                        {"$set": {
+                            "processed_chunks": processed_chunks,
+                            "total_chunks": total_chunks,
+                            "updated_at": datetime.now(timezone.utc),
+                        }}
+                    )
 
-        except Exception as e:
-            print(f"ERROR on chunk {chunk['chunk_index']}: {str(e)}")
-            errors.append({
-                "chunk_id": chunk["_id"],
-                "chunk_index": chunk["chunk_index"],
-                "error": str(e)
-            })
-            continue
-        finally:
-            processed_chunks += 1
-            await jobs_col.update_one(
-                {"_id": job_id, "user_id": user["uid"]},
-                {"$set": {
-                    "processed_chunks": processed_chunks,
-                    "total_chunks": total_chunks,
-                    "updated_at": datetime.now(timezone.utc),
-                }}
-            )
+    chunk_results = await asyncio.gather(
+        *[process_single_chunk(chunk) for chunk in chunks_to_process]
+    )
+
+    for result_docs, error in chunk_results:
+        all_results.extend(result_docs)
+        if error:
+            errors.append(error)
 
     await results_col.delete_many(
         {"job_id": job_id, "source": "model", "approved": False}

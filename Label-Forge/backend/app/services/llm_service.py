@@ -1,5 +1,6 @@
 import json
 import os
+import asyncio
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -55,7 +56,7 @@ def _strip_code_fences(text: str) -> str:
             return "\n".join(lines[1:-1]).strip()
     return stripped
 
-def refine_prompt(prompt: str) -> str:
+def _refine_prompt_sync(prompt: str) -> str:
     instruction = f"{SYSTEM_INSTRUCTION}\n\n{prompt}".strip()
     response = client.models.generate_content(
         model="gemini-2.5-flash",
@@ -64,7 +65,10 @@ def refine_prompt(prompt: str) -> str:
     text = getattr(response, "text", None) or ""
     return text.strip()
 
-def extract_pairs(system_prompt: str, user_message: str) -> list[dict]:
+async def refine_prompt(prompt: str) -> str:
+    return await asyncio.to_thread(_refine_prompt_sync, prompt)
+
+def _extract_pairs_sync(system_prompt: str, user_message: str) -> list[dict]:
     prompt = f"{system_prompt}\n\n{user_message}".strip()
     response = client.models.generate_content(
         model="gemini-2.5-flash",
@@ -80,3 +84,6 @@ def extract_pairs(system_prompt: str, user_message: str) -> list[dict]:
     except Exception:
         return []
     return []
+
+async def extract_pairs(system_prompt: str, user_message: str) -> list[dict]:
+    return await asyncio.to_thread(_extract_pairs_sync, system_prompt, user_message)

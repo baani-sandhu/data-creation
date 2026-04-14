@@ -1,18 +1,27 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { Sparkles } from "lucide-react";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
 import { S, GenerationResult, persistState } from "../../state";
 import { getIdToken } from "../../lib/auth";
 import { API_BASE_URL } from "../../lib/api";
 
+const LOADING_MESSAGES = [
+  "Reading through your documents...",
+  "Identifying extractable patterns...",
+  "Generating structured training pairs...",
+  "Scoring confidence for each pair...",
+  "Almost there...",
+];
+
 export function Step4LLMGeneration() {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [sessionExpired, setSessionExpired] = useState(false);
-  const [totalChunks, setTotalChunks] = useState(Math.max(1, Number(S.jobData?.total_chunks ?? 1)));
-  const [simulatedChunk, setSimulatedChunk] = useState(1);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const [generationResult, setGenerationResult] = useState<GenerationResult | null>(
     S.generationResult ?? null
   );
@@ -27,15 +36,14 @@ export function Step4LLMGeneration() {
     }
 
     setIsLoading(true);
+    setLoadingProgress(0);
+    setLoadingMessageIndex(0);
     try {
       const token = await getIdToken();
       if (!token) {
         throw new Error("Please sign in to generate pairs.");
       }
 
-      const normalizedTotal = Math.max(1, Math.floor(Number(S.jobData?.total_chunks ?? 1) || 1));
-      setTotalChunks(normalizedTotal);
-      setSimulatedChunk(1);
       const generateUrl = `${API_BASE_URL}/jobs/${S.jobId}/generate`;
       console.log("Calling generate:", generateUrl);
       const response = await fetch(generateUrl, {
@@ -66,12 +74,13 @@ export function Step4LLMGeneration() {
       S.generationResult = result;
       persistState();
       setGenerationResult(result);
-      setSimulatedChunk(normalizedTotal);
       await new Promise((resolve) => window.setTimeout(resolve, 500));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to generate pairs.";
       setError(message);
     } finally {
+      setLoadingProgress(100);
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
       setIsLoading(false);
     }
   };
@@ -89,6 +98,27 @@ export function Step4LLMGeneration() {
 
     runGeneration();
   }, [navigate]);
+
+  useEffect(() => {
+    if (!isLoading) return;
+
+    const intervalId = window.setInterval(() => {
+      setLoadingMessageIndex((prev) => (prev + 1) % LOADING_MESSAGES.length);
+    }, 3000);
+
+    return () => window.clearInterval(intervalId);
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (!isLoading) return;
+
+    setLoadingProgress(0);
+    const timeoutId = window.setTimeout(() => {
+      setLoadingProgress(90);
+    }, 80);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isLoading]);
 
   if (sessionExpired) {
     return (
@@ -119,42 +149,41 @@ export function Step4LLMGeneration() {
     <div data-testid="step4-generation" className="space-y-4">
       {isLoading && (
         <LFCard>
-          <div className="flex flex-col items-center justify-center gap-4 py-10">
-            <svg width="36" height="36" viewBox="0 0 36 36" aria-label="Loading">
-              <circle
-                cx="18"
-                cy="18"
-                r="14"
-                fill="none"
-                stroke="var(--border-color)"
-                strokeWidth="4"
-                opacity="0.25"
+          <div className="relative mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-4 overflow-hidden px-6 py-10 text-center">
+            <div className="relative flex h-28 w-28 items-center justify-center">
+              <div
+                className="absolute inset-0 animate-spin rounded-full border-4"
+                style={{ borderColor: "var(--border-color)", borderTopColor: "var(--ink-dark)" }}
               />
-              <path
-                d="M18 4a14 14 0 0 1 14 14"
-                fill="none"
-                stroke="var(--ink-dark)"
-                strokeWidth="4"
-                strokeLinecap="round"
-              >
-                <animateTransform
-                  attributeName="transform"
-                  type="rotate"
-                  from="0 18 18"
-                  to="360 18 18"
-                  dur="1s"
-                  repeatCount="indefinite"
+              <div
+                className="absolute inset-2 animate-ping rounded-full border opacity-40"
+                style={{ borderColor: "var(--ink-light)" }}
+              />
+              <div className="relative z-10 rounded-full p-4 shadow-sm" style={{ background: "var(--card-bg)" }}>
+                <Sparkles
+                  className="h-8 w-8 animate-pulse"
+                  style={{ color: "var(--ink-dark)" }}
+                  aria-hidden="true"
                 />
-              </path>
-            </svg>
+              </div>
+            </div>
+            <h3 style={{ fontSize: "18px", fontWeight: 500 }}>Extracting Training Pairs</h3>
+            <p style={{ fontSize: "13px", color: "var(--text-muted)" }}>
+              {LOADING_MESSAGES[loadingMessageIndex]}
+            </p>
             <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: "12px",
-                color: "var(--text-muted)",
-              }}
+              className="absolute bottom-0 left-0 h-[2px] w-full"
+              style={{ background: "var(--border-color)" }}
             >
-              Processing chunk {Math.min(simulatedChunk, totalChunks)} of {totalChunks}...
+              <div
+                className="h-full"
+                style={{
+                  background: "var(--ink-dark)",
+                  width: `${loadingProgress}%`,
+                  transition:
+                    loadingProgress >= 100 ? "width 200ms ease-out" : "width 30000ms linear",
+                }}
+              />
             </div>
           </div>
         </LFCard>

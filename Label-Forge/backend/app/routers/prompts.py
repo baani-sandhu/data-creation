@@ -18,7 +18,7 @@ async def refine_prompt_endpoint(request: Request, body: PromptRefineRequest):
         raise HTTPException(400, "Prompt is required")
 
     try:
-        refined = refine_prompt(body.prompt)
+        refined = await refine_prompt(body.prompt)
         if not refined:
             raise ValueError("No refined prompt returned")
         return {"refined_prompt": refined}
