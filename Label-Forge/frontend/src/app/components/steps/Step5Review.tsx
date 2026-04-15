@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { LFCard } from "../ui/LFCard";
 import { LFButton } from "../ui/LFButton";
@@ -30,6 +30,34 @@ export function Step5Review() {
   const [stats, setStats] = useState<ResultsStats | null>(null);
   const [feedbackCount, setFeedbackCount] = useState(S.feedbackCount ?? 0);
   const [isRerunning, setIsRerunning] = useState(false);
+
+  const toDisplayText = (value: unknown) => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  };
+
+  const renderPairValue = (value: unknown): ReactNode => {
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      return (
+        <div className="space-y-1">
+          {Object.entries(value as Record<string, unknown>).map(([key, nestedValue]) => (
+            <div key={key}>
+              <strong>{key}:</strong> {toDisplayText(nestedValue)}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    return <span>{toDisplayText(value)}</span>;
+  };
 
   const getAuthHeaders = async () => {
     const token = await getIdToken();
@@ -88,6 +116,13 @@ export function Step5Review() {
 
     fetchAll();
   }, []);
+
+  useEffect(() => {
+    [...approvedResults, ...pendingResults].forEach((item) => {
+      const output = (item.pair as Record<string, unknown> | undefined)?.output;
+      console.log("Rendered output:", output);
+    });
+  }, [approvedResults, pendingResults]);
 
   const handleNext = () => {
     navigate("/wizard/export");
@@ -307,7 +342,7 @@ export function Step5Review() {
                           >
                             {field}:
                           </span>
-                          <span>{value}</span>
+                          {renderPairValue(value)}
                         </div>
                       ))}
                     </div>
@@ -386,7 +421,7 @@ export function Step5Review() {
                             {field}
                           </div>
                           <textarea
-                            value={editedPairs[item._id]?.[field] ?? value}
+                            value={editedPairs[item._id]?.[field] ?? toDisplayText(value)}
                             onChange={(event) => handlePairChange(item._id, field, event.target.value)}
                             className="w-full rounded-[6px] border px-3 py-2"
                             style={{

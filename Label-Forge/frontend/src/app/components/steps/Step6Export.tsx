@@ -167,6 +167,18 @@ export function Step6Export() {
   const humanReviewed = exportResults.filter((result) => result.human_reviewed === true).length;
   const fields = jobData?.fields ?? [];
 
+  const toDisplayText = (value: unknown) => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  };
+
   const renderJsonPreview = () => (
     <div className="divide-y" style={{ borderColor: "rgba(148, 163, 184, 0.2)" }}>
       {exportResults.map((item) => (
@@ -218,7 +230,7 @@ export function Step6Export() {
                   className="px-3 py-2 align-top"
                   style={{ borderBottom: "1px solid rgba(148, 163, 184, 0.12)" }}
                 >
-                  {item.pair[field] ?? ""}
+                  {toDisplayText(item.pair[field])}
                 </td>
               ))}
             </tr>
