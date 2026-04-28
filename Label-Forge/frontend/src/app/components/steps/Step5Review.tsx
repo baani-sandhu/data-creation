@@ -266,6 +266,12 @@ export function Step5Review() {
 
   const approvedCount = stats?.approved ?? approvedResults.length;
   const pendingCount = stats?.pending ?? pendingResults.length;
+  const getAugmentationBadgeLabel = (item: ResultItem) => {
+    if (!item.is_augmented) return null;
+    if (item.augmentation_source === "generation") return "Augmented · Generated";
+    if (item.augmentation_source === "paraphrase") return "Augmented · Paraphrase";
+    return "Augmented";
+  };
 
   return (
     <div data-testid="step5-review" className="space-y-4">
@@ -347,9 +353,14 @@ export function Step5Review() {
                       ))}
                     </div>
                     <div className="mt-3 flex items-center justify-between">
-                      <LFBadge color={item.source === "feedback" ? "teal" : item.source === "human" ? "green" : "blue"}>
-                        {item.source}
-                      </LFBadge>
+                      <div className="flex items-center gap-2">
+                        <LFBadge color={item.source === "feedback" ? "teal" : item.source === "human" ? "green" : "blue"}>
+                          {item.source}
+                        </LFBadge>
+                        {getAugmentationBadgeLabel(item) && (
+                          <LFBadge color="amber">{getAugmentationBadgeLabel(item)}</LFBadge>
+                        )}
+                      </div>
                       <div className="flex-1 ml-3">
                         <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: "#E5E7EB" }}>
                           <div
@@ -435,6 +446,11 @@ export function Step5Review() {
                         </div>
                       ))}
                       <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {getAugmentationBadgeLabel(item) && (
+                            <LFBadge color="amber">{getAugmentationBadgeLabel(item)}</LFBadge>
+                          )}
+                        </div>
                         <div className="flex-1">
                           <div className="h-1 rounded-full overflow-hidden" style={{ backgroundColor: "#E5E7EB" }}>
                             <div

@@ -46,10 +46,8 @@ export function Step4LLMGeneration() {
       const headers = { Authorization: `Bearer ${token}` };
 
       const POLL_INTERVAL_MS = 1500;
-      const POLL_TIMEOUT_MS = 900000;
-      const startedAt = Date.now();
 
-      while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+      while (true) {
         const jobResponse = await fetch(`${API_BASE_URL}/jobs/${S.jobId}`, {
           headers,
         });
@@ -98,7 +96,6 @@ export function Step4LLMGeneration() {
         await new Promise((resolve) => window.setTimeout(resolve, POLL_INTERVAL_MS));
       }
 
-      throw new Error("Generation timed out. Please retry.");
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to generate pairs.";
       setError(message);

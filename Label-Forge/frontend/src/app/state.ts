@@ -53,6 +53,8 @@ export type ResultItem = {
   human_reviewed: boolean;
   approved: boolean;
   created_at?: string;
+  is_augmented?: boolean;
+  augmentation_source?: "generation" | "paraphrase" | string;
 };
 
 export const S: {

@@ -9,6 +9,7 @@ from app.services.prompt_builder import (
 )
 from app.services.llm_service import extract_pairs
 from app.auth import get_current_user, get_owned_job
+from app.services.pair_hash import compute_pair_hash
 from datetime import datetime, timezone
 from app.limiter import limiter
 import uuid
@@ -130,6 +131,7 @@ async def run_generation_for_job(job_id: str, user_id: str):
                         "job_id": job_id,
                         "chunk_id": chunk["_id"],
                         "pair": pair,
+                        "pair_hash": compute_pair_hash(pair),
                         "confidence": confidence,
                         "reasoning": reasoning,
                         "source": "model",
@@ -306,6 +308,7 @@ async def update_result(job_id: str, result_id: str, body: UpdateResultBody, use
         if pair_fields != job_fields:
             raise HTTPException(400, "Pair fields must exactly match job fields")
         update_data["pair"] = body.pair
+        update_data["pair_hash"] = compute_pair_hash(body.pair)
 
     if body.approved is not None:
         update_data["approved"] = body.approved

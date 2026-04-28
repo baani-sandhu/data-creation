@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import auth, jobs, examples, prompts, generation, export, documents
+from app.routers import auth, jobs, examples, prompts, generation, export, documents, augmentation
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.limiter import limiter
@@ -27,6 +27,7 @@ app.include_router(prompts.router)
 app.include_router(generation.router)
 app.include_router(export.router)
 app.include_router(documents.router)
+app.include_router(augmentation.router)
 app.include_router(auth.router)
 
 @app.on_event("startup")

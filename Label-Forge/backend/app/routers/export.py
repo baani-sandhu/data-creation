@@ -79,7 +79,7 @@ async def _get_approved_pairs_for_job(job_id: str, fields: list[str]) -> list[di
 @router.get("/jobs/{job_id}/export")
 async def export_dataset(job_id: str, user: dict = Depends(get_current_user)):
     job = await get_owned_job(job_id, user)
-    output_format = job.get("output_format", "jsonl")
+    output_format = job.get("output_format", "csv")
     fields = job["fields"]
 
     pairs = await _get_approved_pairs_for_job(job_id, fields)
@@ -113,7 +113,7 @@ async def save_to_gallery(job_id: str, user: dict = Depends(get_current_user)):
             "dataset_id": str(existing["_id"]),
         }
 
-    output_format = job.get("output_format", "jsonl")
+    output_format = job.get("output_format", "csv")
     fields = job["fields"]
     pairs = await _get_approved_pairs_for_job(job_id, fields)
     if not pairs:
@@ -170,7 +170,7 @@ async def download_dataset(dataset_id: str, user: dict = Depends(get_current_use
     if not file_path or not os.path.exists(file_path):
         raise HTTPException(404, "Dataset file not found")
 
-    output_format = dataset.get("output_format", "jsonl")
+    output_format = dataset.get("output_format", "csv")
     if output_format == "json":
         media_type = "application/json"
     elif output_format == "csv":

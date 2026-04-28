@@ -24,7 +24,7 @@ class CreateJobFromDocumentBody(BaseModel):
     document_id: str
     fields: list[str]
     task_prompt: str
-    output_format: str = "jsonl"
+    output_format: str = "csv"
     confidence_threshold: float = 0.75
 
 
@@ -247,7 +247,7 @@ async def create_job(
     files: List[UploadFile] = File(...),
     fields: str = Form(...),
     task_prompt: str = Form(...),
-    output_format: str = Form("jsonl"),
+    output_format: str = Form("csv"),
     confidence_threshold: float = Form(0.75),
     examples: str | None = Form(None),
 ):

@@ -11,6 +11,19 @@ interface ResultsStats {
 }
 
 type ExportFormat = "json" | "jsonl" | "csv";
+type AugmentationStatus = "running" | "completed" | "partial" | "failed";
+
+interface AugmentationRunState {
+  augmentation_run_id: string;
+  status: AugmentationStatus;
+  mode1_generated: number;
+  mode2_generated: number;
+  mode1_quota: number;
+  mode2_quota: number;
+  shortfall_message: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+}
 
 export function Step6Export() {
   const [exportResults, setExportResults] = useState<ResultItem[]>(S.exportResults ?? []);
@@ -24,14 +37,32 @@ export function Step6Export() {
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
   const [isSavedToGallery, setIsSavedToGallery] = useState(false);
+  const [targetSize, setTargetSize] = useState("");
+  const [mode2Percent, setMode2Percent] = useState(50);
+  const [augmentationError, setAugmentationError] = useState("");
+  const [isStartingAugmentation, setIsStartingAugmentation] = useState(false);
+  const [augmentationRun, setAugmentationRun] = useState<AugmentationRunState | null>(null);
 
-  const fmt = ((jobData?.output_format || "json").toLowerCase()) as ExportFormat;
+  const fmt = ((jobData?.output_format || "csv").toLowerCase()) as ExportFormat;
   const labels: Record<ExportFormat, string> = {
     json: "Download JSON",
     jsonl: "Download JSONL",
     csv: "Download CSV",
   };
   const downloadLabel = labels[fmt];
+  const approvedCount = exportResults.length;
+  const minimumTargetSize = approvedCount + 1;
+  const parsedTargetSize = Number(targetSize);
+  const targetValidationMessage =
+    targetSize.trim().length === 0
+      ? ""
+      : Number.isNaN(parsedTargetSize) || parsedTargetSize <= approvedCount
+        ? `Target size must be greater than current approved pairs (${approvedCount}).`
+        : "";
+  const canShowAugmentation = approvedCount > 0;
+  const isAugmentationRunning = augmentationRun?.status === "running";
+  const totalGeneratedSoFar = (augmentationRun?.mode1_generated || 0) + (augmentationRun?.mode2_generated || 0);
+  const totalQuota = (augmentationRun?.mode1_quota || 0) + (augmentationRun?.mode2_quota || 0);
 
   const getAuthHeaders = async () => {
     const token = await getIdToken();
@@ -93,6 +124,112 @@ export function Step6Export() {
 
     fetchExportData();
   }, []);
+
+  useEffect(() => {
+    if (!canShowAugmentation) return;
+    if (!targetSize) {
+      setTargetSize(String(minimumTargetSize));
+    }
+  }, [canShowAugmentation, minimumTargetSize, targetSize]);
+
+  useEffect(() => {
+    if (!augmentationRun?.augmentation_run_id) return;
+    if (augmentationRun.status !== "running") return;
+
+    let stopped = false;
+    let intervalId: number | null = null;
+
+    const pollStatus = async () => {
+      try {
+        const authHeaders = await getAuthHeaders();
+        const response = await fetch(
+          `${API_BASE_URL}/augmentation/${augmentationRun.augmentation_run_id}/status`,
+          { headers: authHeaders }
+        );
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(message || "Failed to fetch augmentation status.");
+        }
+        const statusData = (await response.json()) as AugmentationRunState;
+        if (stopped) return;
+        setAugmentationRun(statusData);
+      } catch (err) {
+        if (stopped) return;
+        const message = err instanceof Error ? err.message : "Unable to poll augmentation status.";
+        setAugmentationError(message);
+      }
+    };
+
+    pollStatus();
+    intervalId = window.setInterval(pollStatus, 5000);
+
+    return () => {
+      stopped = true;
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [augmentationRun?.augmentation_run_id, augmentationRun?.status]);
+
+  const handleStartAugmentation = async () => {
+    setAugmentationError("");
+    if (!S.jobId) {
+      setAugmentationError("No job found. Please create a job first.");
+      return;
+    }
+    if (targetValidationMessage) {
+      setAugmentationError(targetValidationMessage);
+      return;
+    }
+
+    setIsStartingAugmentation(true);
+    try {
+      const authHeaders = await getAuthHeaders();
+      const startResponse = await fetch(`${API_BASE_URL}/augmentation/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          job_id: S.jobId,
+          target_size: parsedTargetSize,
+          mode_split: mode2Percent / 100,
+        }),
+      });
+      if (!startResponse.ok) {
+        const message = await startResponse.text();
+        throw new Error(message || "Failed to start augmentation.");
+      }
+
+      const startData = await startResponse.json();
+      const runId = startData?.augmentation_run_id?.toString();
+      if (!runId) {
+        throw new Error("Augmentation run id not returned.");
+      }
+
+      setAugmentationRun({
+        augmentation_run_id: runId,
+        status: "running",
+        mode1_generated: 0,
+        mode2_generated: 0,
+        mode1_quota: 0,
+        mode2_quota: 0,
+        shortfall_message: null,
+        created_at: null,
+        completed_at: null,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to start augmentation.";
+      setAugmentationError(message);
+    } finally {
+      setIsStartingAugmentation(false);
+    }
+  };
+
+  const handleResetAugmentation = () => {
+    setAugmentationRun(null);
+    setAugmentationError("");
+    if (canShowAugmentation) {
+      setTargetSize(String(approvedCount + 1));
+      setMode2Percent(50);
+    }
+  };
 
   const handleDownload = async () => {
     setDownloadError("");
@@ -369,6 +506,120 @@ export function Step6Export() {
           )}
         </div>
       </LFCard>
+
+      {canShowAugmentation && (
+        <LFCard header="Augment Dataset">
+          <div className="space-y-4">
+            <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+              Current approved pairs: {approvedCount}
+            </p>
+
+            {!augmentationRun && (
+              <>
+                <div>
+                  <label className="block mb-2" style={{ fontSize: "13px", color: "var(--text-secondary)", fontWeight: 500 }}>
+                    Target Size
+                  </label>
+                  <input
+                    type="number"
+                    min={minimumTargetSize}
+                    value={targetSize}
+                    onChange={(event) => setTargetSize(event.target.value)}
+                    className="w-full rounded-[6px] border px-3 py-2"
+                    style={{ borderColor: "var(--border-color)", fontSize: "13px" }}
+                  />
+                  {targetValidationMessage && (
+                    <p style={{ fontSize: "12px", color: "var(--error-red)", marginTop: "6px" }}>
+                      {targetValidationMessage}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block mb-2" style={{ fontSize: "13px", color: "var(--text-secondary)", fontWeight: 500 }}>
+                    New generation % / Paraphrase %
+                  </label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={mode2Percent}
+                    onChange={(event) => setMode2Percent(Number(event.target.value))}
+                    className="w-full"
+                  />
+                  <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "6px" }}>
+                    Generation: {mode2Percent}% | Paraphrase: {100 - mode2Percent}%
+                  </p>
+                </div>
+
+                <LFButton
+                  onClick={handleStartAugmentation}
+                  disabled={isStartingAugmentation || Boolean(targetValidationMessage)}
+                >
+                  {isStartingAugmentation ? "Starting..." : "Start Augmentation"}
+                </LFButton>
+              </>
+            )}
+
+            {augmentationRun && (
+              <div className="space-y-3">
+                <div
+                  className="p-3 rounded-[6px] border"
+                  style={{ borderColor: "var(--border-color)", backgroundColor: "var(--card-header)" }}
+                >
+                  <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                    Status: {augmentationRun.status}
+                  </p>
+                  <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                    Mode 2 (Generation): {augmentationRun.mode2_generated} / {augmentationRun.mode2_quota}
+                  </p>
+                  <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                    Mode 1 (Paraphrase): {augmentationRun.mode1_generated} / {augmentationRun.mode1_quota}
+                  </p>
+                  <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                    Overall: {totalGeneratedSoFar} of {totalQuota} target pairs generated
+                  </p>
+                </div>
+
+                {!isAugmentationRunning && (
+                  <div className="space-y-2">
+                    <p style={{ fontSize: "13px", color: "var(--ink-dark)", fontWeight: 500 }}>
+                      Augmentation Summary
+                    </p>
+                    <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                      Pairs generated by Mode 2: {augmentationRun.mode2_generated}
+                    </p>
+                    <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                      Pairs generated by Mode 1: {augmentationRun.mode1_generated}
+                    </p>
+                    <p style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                      Total added to dataset: {totalGeneratedSoFar}
+                    </p>
+                    {augmentationRun.shortfall_message && (
+                      <div
+                        className="p-3 rounded-[6px] border"
+                        style={{ borderColor: "var(--warning-amber)", backgroundColor: "var(--label-amber)" }}
+                      >
+                        <p style={{ fontSize: "12px", color: "var(--ink-dark)" }}>
+                          {augmentationRun.shortfall_message}
+                        </p>
+                      </div>
+                    )}
+                    <LFButton variant="secondary" onClick={handleResetAugmentation}>
+                      Run Another Augmentation
+                    </LFButton>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {augmentationError && (
+              <p style={{ fontSize: "12px", color: "var(--error-red)" }}>{augmentationError}</p>
+            )}
+          </div>
+        </LFCard>
+      )}
 
       <div className="flex flex-col items-end gap-2 pt-4">
         <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>

@@ -31,7 +31,7 @@ export function Step1Setup() {
   const [taskDescription, setTaskDescription] = useState("");
   const [labelInput, setLabelInput] = useState("");
   const [labels, setLabels] = useState<Array<{ name: string; color: LabelColor }>>([]);
-  const [exportFormat, setExportFormat] = useState("JSON");
+  const [exportFormat, setExportFormat] = useState("CSV");
   const [confidenceThreshold, setConfidenceThreshold] = useState("0.85");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
