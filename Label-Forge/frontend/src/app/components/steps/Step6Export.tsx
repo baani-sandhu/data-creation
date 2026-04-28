@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { LFButton } from "../ui/LFButton";
 import { LFCard } from "../ui/LFCard";
+import { LFBadge } from "../ui/LFBadge";
 import { getIdToken } from "../../lib/auth";
 import { API_BASE_URL } from "../../lib/api";
 import { S, persistState, type JobData, type ResultItem } from "../../state";
@@ -12,6 +13,7 @@ interface ResultsStats {
 
 type ExportFormat = "json" | "jsonl" | "csv";
 type AugmentationStatus = "running" | "completed" | "partial" | "failed";
+type PreviewTab = "all" | "original" | "augmented";
 
 interface AugmentationRunState {
   augmentation_run_id: string;
@@ -42,6 +44,7 @@ export function Step6Export() {
   const [augmentationError, setAugmentationError] = useState("");
   const [isStartingAugmentation, setIsStartingAugmentation] = useState(false);
   const [augmentationRun, setAugmentationRun] = useState<AugmentationRunState | null>(null);
+  const [activePreviewTab, setActivePreviewTab] = useState<PreviewTab>("all");
 
   const fmt = ((jobData?.output_format || "csv").toLowerCase()) as ExportFormat;
   const labels: Record<ExportFormat, string> = {
@@ -63,6 +66,20 @@ export function Step6Export() {
   const isAugmentationRunning = augmentationRun?.status === "running";
   const totalGeneratedSoFar = (augmentationRun?.mode1_generated || 0) + (augmentationRun?.mode2_generated || 0);
   const totalQuota = (augmentationRun?.mode1_quota || 0) + (augmentationRun?.mode2_quota || 0);
+  const originalResults = exportResults.filter((result) => !result.is_augmented);
+  const augmentedResults = exportResults.filter((result) => result.is_augmented === true);
+  const activePreviewResults =
+    activePreviewTab === "original"
+      ? originalResults
+      : activePreviewTab === "augmented"
+        ? augmentedResults
+        : exportResults;
+  const previewHeaderText =
+    activePreviewTab === "original"
+      ? `Showing ${activePreviewResults.length} original pairs`
+      : activePreviewTab === "augmented"
+        ? `Showing ${activePreviewResults.length} augmented pairs`
+        : `Showing all ${activePreviewResults.length} pairs`;
 
   const getAuthHeaders = async () => {
     const token = await getIdToken();
@@ -316,26 +333,34 @@ export function Step6Export() {
     }
   };
 
-  const renderJsonPreview = () => (
+  const renderJsonPreview = (rows: ResultItem[]) => (
     <div className="divide-y" style={{ borderColor: "rgba(148, 163, 184, 0.2)" }}>
-      {exportResults.map((item) => (
-        <pre
-          key={item._id}
-          className="py-4 whitespace-pre-wrap break-words"
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: "12px",
-            color: "#E2E8F0",
-            margin: 0,
-          }}
-        >
-          {JSON.stringify(item.pair, null, 2)}
-        </pre>
+      {rows.map((item) => (
+        <div key={item._id} className="py-4">
+          <pre
+            className="whitespace-pre-wrap break-words"
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: "12px",
+              color: "#E2E8F0",
+              margin: 0,
+            }}
+          >
+            {JSON.stringify(item.pair, null, 2)}
+          </pre>
+          {item.is_augmented && (
+            <div className="mt-2">
+              <LFBadge color="amber">
+                {item.augmentation_source === "generation" ? "Generated" : "Paraphrase"}
+              </LFBadge>
+            </div>
+          )}
+        </div>
       ))}
     </div>
   );
 
-  const renderCsvPreview = () => (
+  const renderCsvPreview = (rows: ResultItem[]) => (
     <div className="overflow-x-auto rounded-[6px]" style={{ border: "1px solid rgba(148, 163, 184, 0.2)" }}>
       <table className="w-full border-collapse" style={{ fontSize: "12px", color: "#E2E8F0" }}>
         <thead>
@@ -356,21 +381,36 @@ export function Step6Export() {
           </tr>
         </thead>
         <tbody>
-          {exportResults.map((item, index) => (
-            <tr
-              key={item._id}
-              style={{ backgroundColor: index % 2 === 0 ? "#111827" : "#0b1220" }}
-            >
-              {fields.map((field) => (
-                <td
-                  key={`${item._id}-${field}`}
-                  className="px-3 py-2 align-top"
-                  style={{ borderBottom: "1px solid rgba(148, 163, 184, 0.12)" }}
-                >
-                  {toDisplayText(item.pair[field])}
-                </td>
-              ))}
-            </tr>
+          {rows.map((item, index) => (
+            [
+              <tr
+                key={item._id}
+                style={{ backgroundColor: index % 2 === 0 ? "#111827" : "#0b1220" }}
+              >
+                {fields.map((field) => (
+                  <td
+                    key={`${item._id}-${field}`}
+                    className="px-3 py-2 align-top"
+                    style={{ borderBottom: "1px solid rgba(148, 163, 184, 0.12)" }}
+                  >
+                    {toDisplayText(item.pair[field])}
+                  </td>
+                ))}
+              </tr>,
+              item.is_augmented ? (
+                <tr key={`${item._id}-augmentation`}>
+                  <td
+                    colSpan={Math.max(1, fields.length)}
+                    className="px-3 py-2"
+                    style={{ borderBottom: "1px solid rgba(148, 163, 184, 0.12)", backgroundColor: "#0f172a" }}
+                  >
+                    <LFBadge color="amber">
+                      {item.augmentation_source === "generation" ? "Generated" : "Paraphrase"}
+                    </LFBadge>
+                  </td>
+                </tr>
+              ) : null
+            ]
           ))}
         </tbody>
       </table>
@@ -496,11 +536,46 @@ export function Step6Export() {
           )}
           {!isPreviewLoading && !previewError && exportResults.length > 0 && (
             <div className="space-y-3">
+              <div className="inline-flex rounded-lg border p-1" style={{ borderColor: "rgba(148, 163, 184, 0.3)" }}>
+                <button
+                  onClick={() => setActivePreviewTab("original")}
+                  className="px-3 py-1.5 rounded-md text-xs transition-colors"
+                  style={{
+                    backgroundColor: activePreviewTab === "original" ? "var(--label-blue)" : "transparent",
+                    color: activePreviewTab === "original" ? "var(--ink-dark)" : "#93c5fd",
+                    fontWeight: activePreviewTab === "original" ? 600 : 500,
+                  }}
+                >
+                  Original ({originalResults.length})
+                </button>
+                <button
+                  onClick={() => setActivePreviewTab("augmented")}
+                  className="px-3 py-1.5 rounded-md text-xs transition-colors"
+                  style={{
+                    backgroundColor: activePreviewTab === "augmented" ? "var(--label-blue)" : "transparent",
+                    color: activePreviewTab === "augmented" ? "var(--ink-dark)" : "#93c5fd",
+                    fontWeight: activePreviewTab === "augmented" ? 600 : 500,
+                  }}
+                >
+                  Augmented ({augmentedResults.length})
+                </button>
+                <button
+                  onClick={() => setActivePreviewTab("all")}
+                  className="px-3 py-1.5 rounded-md text-xs transition-colors"
+                  style={{
+                    backgroundColor: activePreviewTab === "all" ? "var(--label-blue)" : "transparent",
+                    color: activePreviewTab === "all" ? "var(--ink-dark)" : "#93c5fd",
+                    fontWeight: activePreviewTab === "all" ? 600 : 500,
+                  }}
+                >
+                  All ({exportResults.length})
+                </button>
+              </div>
               <div style={{ fontSize: "12px", color: "#93c5fd", fontFamily: "var(--font-mono)" }}>
-                Showing all {exportResults.length} pairs
+                {previewHeaderText}
               </div>
               <div className="max-h-[500px] overflow-y-auto rounded-[6px] px-3 py-2" style={{ backgroundColor: "#0f172a" }}>
-                {fmt === "csv" ? renderCsvPreview() : renderJsonPreview()}
+                {fmt === "csv" ? renderCsvPreview(activePreviewResults) : renderJsonPreview(activePreviewResults)}
               </div>
             </div>
           )}
