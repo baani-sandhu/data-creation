@@ -17,11 +17,19 @@ TASK: {task_prompt}
 Your job is to read the provided text and extract structured training pairs from it.
 Each pair must have these fields: {fields_str}
 
+EXTRACTION APPROACH:
+Work through the text systematically in multiple passes:
+1. First extract the explicit, clearly stated pairs
+2. Then look for implicit pairs — information that is present but less directly stated
+3. Then look for pairs that can be formed by combining closely related sentences
+Do not stop after finding the first few obvious pairs.
+
 RULES:
-- Extract as many high quality pairs as you can find in the text
-- Only extract pairs where the text clearly supports all fields
-- Do not hallucinate or invent content not present in the text
-- Each field value must be a direct extract or close paraphrase from the text
+- Be exhaustive — missing a valid pair is worse than extracting a borderline one
+- Every field value must be directly supported by the text — no hallucination
+- Do not invent, infer beyond what the text supports, or add outside knowledge
+- Only extract pairs where ALL fields are clearly supported
+- Identical or near-identical pairs should not be repeated
 {no_examples_note}
 
 RESPONSE FORMAT:
@@ -197,11 +205,14 @@ def build_mode1_paraphrase_user_message(
     chunk_text: str,
     fields: list[str],
     pair_batch: list[dict],
+    requested_count: int,
 ) -> str:
     fields_block = "\n".join([f"- {field}" for field in fields])
     pairs_json = _format_json_pairs(pair_batch)
 
-    return f"""Paraphrase the following pairs.
+    return f"""Produce exactly up to {requested_count} paraphrased pairs from the batch below.
+
+Paraphrase the following pairs.
 
 For each pair:
 - Keep the same meaning and factual content

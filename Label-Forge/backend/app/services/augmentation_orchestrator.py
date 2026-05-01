@@ -1,4 +1,5 @@
 import uuid
+import logging
 from datetime import datetime, timezone
 
 from app.database import augmentation_runs_col, chunks_col, results_col
@@ -9,6 +10,7 @@ from app.services.augmentation_mode2 import run_mode2_generation_for_chunk
 DEFAULT_MODE2_SPLIT = 0.5
 DEFAULT_MODE1_SPLIT = 1.0 - DEFAULT_MODE2_SPLIT
 MAX_PAIRS_PER_CHUNK_MULTIPLIER = 10
+logger = logging.getLogger(__name__)
 
 
 def _normalize_mode2_split(mode_split: float) -> float:
@@ -117,6 +119,11 @@ async def execute_augmentation_run(augmentation_run_id: str) -> None:
 
     chunks_cursor = chunks_col.find({"job_id": job_id}).sort("chunk_index", 1)
     all_chunks = await chunks_cursor.to_list(length=None)
+    print(
+        "[orchestrator] run start: "
+        f"job_id={job_id} target_size={target_size} gap={gap} "
+        f"total_chunks={len(all_chunks)} total_approved_pairs={approved_count}"
+    )
 
     if approved_count == 0 or not all_chunks:
         shortfall_message = _build_shortfall_message(0, gap)
@@ -164,40 +171,72 @@ async def execute_augmentation_run(augmentation_run_id: str) -> None:
                 "mode1_quota": chunk_quota_mode1,
             }
         )
-
-    mode2_generated = 0
-    for item in chunk_plan:
-        if item["mode2_quota"] <= 0:
-            continue
-        generated = await run_mode2_generation_for_chunk(
-            job_id=job_id,
-            chunk=item["chunk"],
-            existing_approved_pairs=[doc.get("pair", {}) for doc in item["approved_pairs"]],
-            quota=item["mode2_quota"],
-            augmentation_run_id=augmentation_run_id,
-        )
-        mode2_generated += generated
-        await augmentation_runs_col.update_one(
-            {"augmentation_run_id": augmentation_run_id},
-            {"$set": {"mode2_generated": mode2_generated}},
+        print(
+            "[orchestrator] chunk plan: "
+            f"chunk_id={chunk_id} mode1_quota={chunk_quota_mode1} "
+            f"mode2_quota={chunk_quota_mode2} approved_pairs_count={chunk_original_count}"
         )
 
     mode1_generated = 0
+    mode2_generated = 0
+
     for item in chunk_plan:
-        if item["mode1_quota"] <= 0:
-            continue
-        generated = await run_mode1_paraphrase_for_chunk(
-            job_id=job_id,
-            chunk=item["chunk"],
-            approved_pairs_for_chunk=item["approved_pairs"],
-            quota=item["mode1_quota"],
-            augmentation_run_id=augmentation_run_id,
-        )
-        mode1_generated += generated
-        await augmentation_runs_col.update_one(
-            {"augmentation_run_id": augmentation_run_id},
-            {"$set": {"mode1_generated": mode1_generated}},
-        )
+        try:
+            generated = await run_mode2_generation_for_chunk(
+                job_id=job_id,
+                chunk=item["chunk"],
+                existing_approved_pairs=[doc.get("pair", {}) for doc in item["approved_pairs"]],
+                quota=item["mode2_quota"],
+                augmentation_run_id=augmentation_run_id,
+            )
+            print(
+                "[orchestrator] mode2 chunk complete: "
+                f"chunk_id={item['chunk'].get('_id')} inserted={generated}"
+            )
+            mode2_generated += generated
+            await augmentation_runs_col.update_one(
+                {"augmentation_run_id": augmentation_run_id},
+                {"$set": {"mode2_generated": mode2_generated}},
+            )
+        except Exception:
+            print(
+                "[orchestrator] mode2 chunk exception: "
+                f"chunk_id={item['chunk'].get('_id')} job_id={job_id}"
+            )
+            logger.exception(
+                "mode2 chunk failed: chunk_id=%s job_id=%s",
+                item["chunk"].get("_id"),
+                job_id,
+            )
+
+    for item in chunk_plan:
+        try:
+            generated = await run_mode1_paraphrase_for_chunk(
+                job_id=job_id,
+                chunk=item["chunk"],
+                approved_pairs_for_chunk=item["approved_pairs"],
+                quota=item["mode1_quota"],
+                augmentation_run_id=augmentation_run_id,
+            )
+            print(
+                "[orchestrator] mode1 chunk complete: "
+                f"chunk_id={item['chunk'].get('_id')} inserted={generated}"
+            )
+            mode1_generated += generated
+            await augmentation_runs_col.update_one(
+                {"augmentation_run_id": augmentation_run_id},
+                {"$set": {"mode1_generated": mode1_generated}},
+            )
+        except Exception:
+            print(
+                "[orchestrator] mode1 chunk exception: "
+                f"chunk_id={item['chunk'].get('_id')} job_id={job_id}"
+            )
+            logger.exception(
+                "mode1 chunk failed: chunk_id=%s job_id=%s",
+                item["chunk"].get("_id"),
+                job_id,
+            )
 
     total_generated = mode2_generated + mode1_generated
     if total_generated >= gap:
