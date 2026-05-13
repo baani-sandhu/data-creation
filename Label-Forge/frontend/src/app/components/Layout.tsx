@@ -18,7 +18,8 @@ export function Layout() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const currentStepIndex = steps.findIndex((step) => step.path === location.pathname);
+  const isAugmentPath = location.pathname === "/wizard/augment" || location.pathname === "/wizard/augment/review";
+  const currentStepIndex = isAugmentPath ? steps.length - 1 : steps.findIndex((step) => step.path === location.pathname);
   const currentStep = steps[currentStepIndex];
 
   return (
@@ -123,6 +124,11 @@ export function Layout() {
                 </div>
               );
             })}
+            {isAugmentPath && (
+              <div className="ml-3">
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--primary-blue)" }}>Augment</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

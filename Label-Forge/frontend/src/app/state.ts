@@ -49,12 +49,15 @@ export type ResultItem = {
   pair: Record<string, string>;
   confidence: number;
   reasoning?: string;
-  source: "human" | "model";
+  source: "human" | "model" | "augmented" | "feedback";
   human_reviewed: boolean;
   approved: boolean;
+  discarded?: boolean;
   created_at?: string;
   is_augmented?: boolean;
   augmentation_source?: "generation" | "paraphrase" | string;
+  augmentation_job_id?: string;
+  original_result_id?: string;
 };
 
 export const S: {
@@ -71,6 +74,7 @@ export const S: {
   pendingResults: ResultItem[];
   feedbackCount: number;
   selectedDocumentId: string | null;
+  augmentationJobId: string | null;
 } = {
   jobId: null,
   jobData: null,
@@ -85,6 +89,7 @@ export const S: {
   pendingResults: [],
   feedbackCount: 0,
   selectedDocumentId: null,
+  augmentationJobId: null,
 };
 
 export function resetAppState() {
@@ -101,6 +106,7 @@ export function resetAppState() {
   S.pendingResults = [];
   S.feedbackCount = 0;
   S.selectedDocumentId = null;
+  S.augmentationJobId = null;
   try {
     sessionStorage.removeItem(SESSION_KEY);
   } catch {
@@ -120,6 +126,7 @@ export function persistState() {
       userExamples: S.userExamples,
       generationResult: S.generationResult,
       selectedDocumentId: S.selectedDocumentId,
+      augmentationJobId: S.augmentationJobId,
     };
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(toSave));
   } catch {
@@ -139,6 +146,7 @@ export function restoreState() {
     if (saved.userExamples) S.userExamples = saved.userExamples;
     if (saved.generationResult) S.generationResult = saved.generationResult;
     if (saved.selectedDocumentId) S.selectedDocumentId = saved.selectedDocumentId;
+    if (saved.augmentationJobId) S.augmentationJobId = saved.augmentationJobId;
   } catch {
     // corrupt data, ignore
   }

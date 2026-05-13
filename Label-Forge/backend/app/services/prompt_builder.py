@@ -230,3 +230,73 @@ Grounding chunk:
 ---
 {chunk_text}
 ---"""
+
+
+def build_paraphrase_prompt(pairs: list[dict], variants_per_pair: int, fields: list[str]) -> str:
+    import json
+
+    fields_str = ", ".join(fields)
+    pairs_json = json.dumps(pairs, ensure_ascii=False, indent=2)
+    return f"""You are a training data augmentation assistant.
+
+Below are {len(pairs)} training pairs with fields: {fields_str}.
+For each pair, generate exactly {variants_per_pair} paraphrased versions.
+
+STRICT RULES:
+- Both fields (all fields) must be rewritten together for each variant. Never rewrite fields independently.
+- Preserve exact meaning and facts. Change wording, phrasing, and sentence structure.
+- Do not add new facts or remove important meaning.
+- Keep the same field schema exactly.
+- Return exactly {variants_per_pair} variants for EACH input pair.
+
+Return ONLY a valid JSON array. No markdown. No explanation.
+Each item must follow:
+{{
+  "original_index": int,
+  "variants": [
+    {{{', '.join([f'"{field}": "..."' for field in fields])}}},
+    ... exactly {variants_per_pair} items
+  ]
+}}
+
+Input pairs:
+{pairs_json}
+"""
+
+
+def build_generation_augmentation_prompt(
+    chunk_text: str,
+    existing_pairs: list[dict],
+    fields: list[str],
+) -> str:
+    import json
+
+    fields_str = ", ".join(fields)
+    existing_pairs_json = json.dumps(existing_pairs, ensure_ascii=False, indent=2)
+    return f"""You are a training data extraction assistant.
+
+Task:
+Extract as many new, unique, non-overlapping training pairs as possible from the source text.
+Do not repeat or paraphrase existing pairs.
+
+Required fields schema: {fields_str}
+
+STRICT RULES:
+- Use only facts directly supported by source text.
+- Do not output any pair already represented by existing pairs.
+- Do not output near-duplicates.
+- Return as many valid new pairs as possible.
+
+Return ONLY a JSON array of pairs with this schema:
+[{{
+  {', '.join([f'"{field}": "..."' for field in fields])}
+}}]
+
+Source text:
+---
+{chunk_text}
+---
+
+Existing pairs (must be excluded):
+{existing_pairs_json}
+"""

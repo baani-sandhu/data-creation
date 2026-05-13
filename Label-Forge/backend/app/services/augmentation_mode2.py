@@ -20,6 +20,7 @@ async def run_mode2_generation_for_chunk(
     existing_approved_pairs: list[dict],
     quota: int,
     augmentation_run_id: str,
+    augmentation_cycle: int,
 ) -> int:
     print(
         f"[mode2] entered run_mode2_generation_for_chunk job_id={job_id} chunk_id={chunk.get('_id')} quota={quota}"
@@ -92,7 +93,7 @@ async def run_mode2_generation_for_chunk(
                 "pair_hash": pair_hash,
                 "confidence": confidence,
                 "reasoning": reasoning,
-                "source": "model",
+                "source": "augmented",
                 "human_reviewed": False,
                 "approved": confidence >= float(job.get("confidence_threshold", 0.75)),
                 "discarded": False,
@@ -101,6 +102,8 @@ async def run_mode2_generation_for_chunk(
                 "is_augmented": True,
                 "augmentation_source": "generation",
                 "parent_pair_id": None,
+                "original_result_id": None,
+                "augmentation_cycle": augmentation_cycle,
                 "augmentation_run_id": augmentation_run_id,
             }
             docs_to_insert.append(doc)

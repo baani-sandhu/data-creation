@@ -1,11 +1,13 @@
 import uuid
 import logging
+import asyncio
 from datetime import datetime, timezone
 
 from app.database import augmentation_runs_col, chunks_col, results_col
 from app.models.augmentation_run import AugmentationRun
 from app.services.augmentation_mode1 import run_mode1_paraphrase_for_chunk
 from app.services.augmentation_mode2 import run_mode2_generation_for_chunk
+from app.services.noise_detector import calculate_noise_score
 
 DEFAULT_MODE2_SPLIT = 0.5
 DEFAULT_MODE1_SPLIT = 1.0 - DEFAULT_MODE2_SPLIT
@@ -56,6 +58,7 @@ async def create_augmentation_run(
     gap = target_size - approved_count
     mode2_split = _normalize_mode2_split(mode_split)
     mode1_total_quota, mode2_total_quota = _compute_mode_quotas(gap, mode2_split)
+    cycle_number = (await augmentation_runs_col.count_documents({"job_id": job_id})) + 1
 
     run_doc = AugmentationRun(
         augmentation_run_id=augmentation_run_id,
@@ -66,8 +69,10 @@ async def create_augmentation_run(
         mode2_quota=mode2_total_quota,
         mode1_generated=0,
         mode2_generated=0,
+        cycle_number=cycle_number,
         status="running",
         shortfall_message=None,
+        noise_report=None,
         created_at=now,
         completed_at=None,
     ).model_dump()
@@ -112,6 +117,7 @@ async def execute_augmentation_run(augmentation_run_id: str) -> None:
 
     mode1_total_quota = int(run_doc.get("mode1_quota", 0))
     mode2_total_quota = int(run_doc.get("mode2_quota", 0))
+    cycle_number = int(run_doc.get("cycle_number", 1))
     await augmentation_runs_col.update_one(
         {"augmentation_run_id": augmentation_run_id},
         {"$set": {"gap": gap, "status": "running"}},
@@ -188,6 +194,7 @@ async def execute_augmentation_run(augmentation_run_id: str) -> None:
                 existing_approved_pairs=[doc.get("pair", {}) for doc in item["approved_pairs"]],
                 quota=item["mode2_quota"],
                 augmentation_run_id=augmentation_run_id,
+                augmentation_cycle=cycle_number,
             )
             print(
                 "[orchestrator] mode2 chunk complete: "
@@ -217,6 +224,7 @@ async def execute_augmentation_run(augmentation_run_id: str) -> None:
                 approved_pairs_for_chunk=item["approved_pairs"],
                 quota=item["mode1_quota"],
                 augmentation_run_id=augmentation_run_id,
+                augmentation_cycle=cycle_number,
             )
             print(
                 "[orchestrator] mode1 chunk complete: "
@@ -246,6 +254,60 @@ async def execute_augmentation_run(augmentation_run_id: str) -> None:
         final_status = "partial"
         shortfall_message = _build_shortfall_message(total_generated, gap)
 
+    # Noise check is computed only for paraphrased pairs that map to an original pair.
+    augmented_docs = await results_col.find(
+        {
+            "job_id": job_id,
+            "augmentation_run_id": augmentation_run_id,
+            "is_augmented": True,
+        }
+    ).to_list(length=None)
+    paraphrased_docs = [
+        doc
+        for doc in augmented_docs
+        if doc.get("augmentation_source") == "paraphrase" and doc.get("original_result_id")
+    ]
+
+    original_ids = [doc["original_result_id"] for doc in paraphrased_docs if doc.get("original_result_id")]
+    original_docs = await results_col.find({"_id": {"$in": original_ids}}).to_list(length=None) if original_ids else []
+    original_lookup = {doc["_id"]: doc.get("pair", {}) for doc in original_docs}
+
+    aug_pairs: list[dict] = []
+    orig_pairs: list[dict] = []
+    for doc in paraphrased_docs:
+        orig_id = doc.get("original_result_id")
+        orig_pair = original_lookup.get(orig_id)
+        if isinstance(doc.get("pair"), dict) and isinstance(orig_pair, dict):
+            aug_pairs.append(doc["pair"])
+            orig_pairs.append(orig_pair)
+
+    generated_excluded = len([doc for doc in augmented_docs if doc.get("augmentation_source") == "generation"])
+    try:
+        noise_result = await asyncio.get_running_loop().run_in_executor(
+            None,
+            calculate_noise_score,
+            aug_pairs,
+            orig_pairs,
+        )
+    except Exception:
+        logger.exception("noise calculation failed for augmentation_run_id=%s", augmentation_run_id)
+        noise_result = {
+            "noise_score": 0.0,
+            "noise_percentage": 0.0,
+            "redundancy_rate": 0.0,
+            "drift_rate": 0.0,
+            "redundant_count": 0,
+            "drifted_count": 0,
+            "total_checked": 0,
+            "status": "warning",
+            "message": "Noise calculation failed. Please review augmented data manually.",
+        }
+    noise_result["scope_note"] = (
+        f"Noise calculated on {len(aug_pairs)} paraphrased pairs. "
+        f"{generated_excluded} generated pairs excluded (no original to compare against)."
+    )
+    noise_result["excluded_generated_pairs"] = generated_excluded
+
     await augmentation_runs_col.update_one(
         {"augmentation_run_id": augmentation_run_id},
         {
@@ -254,6 +316,7 @@ async def execute_augmentation_run(augmentation_run_id: str) -> None:
                 "mode2_generated": mode2_generated,
                 "status": final_status,
                 "shortfall_message": shortfall_message,
+                "noise_report": noise_result,
                 "completed_at": datetime.now(timezone.utc),
             }
         },

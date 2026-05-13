@@ -20,6 +20,7 @@ async def run_mode1_paraphrase_for_chunk(
     approved_pairs_for_chunk: list[dict],
     quota: int,
     augmentation_run_id: str,
+    augmentation_cycle: int,
 ) -> int:
     print(
         f"[mode1] entered run_mode1_paraphrase_for_chunk job_id={job_id} chunk_id={chunk.get('_id')} quota={quota}"
@@ -127,7 +128,7 @@ async def run_mode1_paraphrase_for_chunk(
                 "pair_hash": pair_hash,
                 "confidence": confidence,
                 "reasoning": reasoning,
-                "source": "model",
+                "source": "augmented",
                 "human_reviewed": False,
                 "approved": confidence >= float(job.get("confidence_threshold", 0.75)),
                 "discarded": False,
@@ -136,6 +137,8 @@ async def run_mode1_paraphrase_for_chunk(
                 "is_augmented": True,
                 "augmentation_source": "paraphrase",
                 "parent_pair_id": source_pair_id,
+                "original_result_id": source_pair_id,
+                "augmentation_cycle": augmentation_cycle,
                 "augmentation_run_id": augmentation_run_id,
             }
             docs_to_insert.append(doc)

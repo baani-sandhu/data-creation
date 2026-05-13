@@ -2,6 +2,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 import os
 from pymongo import UpdateOne
+from pymongo.errors import OperationFailure
 from app.services.pair_hash import compute_pair_hash
 
 load_dotenv()
@@ -19,41 +20,56 @@ api_keys_col = db["api_keys"]
 augmentation_runs_col = db["augmentation_runs"]
 
 async def create_indexes():
+    async def safe_create_index(collection, keys, **kwargs):
+        try:
+            await collection.create_index(keys, **kwargs)
+        except OperationFailure as exc:
+            # Existing environments can already have the same index name
+            # with slightly different options (e.g., sparse vs non-sparse).
+            # In that case we keep the existing index and continue startup.
+            if getattr(exc, "code", None) == 86:
+                return
+            raise
+
     # chunks collection - most queried by job_id
-    await chunks_col.create_index("job_id")
-    await chunks_col.create_index([("job_id", 1), ("chunk_index", 1)])
+    await safe_create_index(chunks_col, "job_id")
+    await safe_create_index(chunks_col, [("job_id", 1), ("chunk_index", 1)])
 
     # results collection - queried by job_id + various filters
-    await results_col.create_index("job_id")
-    await results_col.create_index([("job_id", 1), ("approved", 1)])
-    await results_col.create_index([("job_id", 1), ("source", 1)])
-    await results_col.create_index([("job_id", 1), ("discarded", 1)])
-    await results_col.create_index(
+    await safe_create_index(results_col, "job_id")
+    await safe_create_index(results_col, [("job_id", 1), ("approved", 1)])
+    await safe_create_index(results_col, [("job_id", 1), ("source", 1)])
+    await safe_create_index(results_col, [("job_id", 1), ("discarded", 1)])
+    await safe_create_index(
+        results_col,
         [("job_id", 1), ("source", 1), ("approved", 1), ("discarded", 1)]
     )
-    await results_col.create_index([("job_id", 1), ("run_number", -1)])
-    await results_col.create_index([("job_id", 1), ("pair_hash", 1)])
+    await safe_create_index(results_col, [("job_id", 1), ("run_number", -1)])
+    await safe_create_index(results_col, [("job_id", 1), ("pair_hash", 1)])
+    await safe_create_index(results_col, [("job_id", 1), ("augmentation_cycle", 1), ("source", 1)])
 
     # jobs collection
-    await jobs_col.create_index("user_id")
-    await jobs_col.create_index([("user_id", 1), ("created_at", -1)])
+    await safe_create_index(jobs_col, "user_id")
+    await safe_create_index(jobs_col, [("user_id", 1), ("created_at", -1)])
 
     # documents collection
-    await documents_col.create_index("user_id")
-    await documents_col.create_index([("user_id", 1), ("original_filename", 1)])
+    await safe_create_index(documents_col, "user_id")
+    await safe_create_index(documents_col, [("user_id", 1), ("original_filename", 1)])
 
     # datasets collection
-    await datasets_col.create_index("user_id")
-    await datasets_col.create_index([("user_id", 1), ("job_id", 1)])
+    await safe_create_index(datasets_col, "user_id")
+    await safe_create_index(datasets_col, [("user_id", 1), ("job_id", 1)])
 
-    # augmentation runs collection
-    await augmentation_runs_col.create_index("augmentation_run_id", unique=True)
-    await augmentation_runs_col.create_index("job_id")
-    await augmentation_runs_col.create_index([("job_id", 1), ("created_at", -1)])
-    await augmentation_runs_col.create_index("status")
+    # augmentation jobs/runs collection
+    await safe_create_index(augmentation_runs_col, "augmentation_run_id", unique=True)
+    await safe_create_index(augmentation_runs_col, "augmentation_job_id", unique=True, sparse=True)
+    await safe_create_index(augmentation_runs_col, "job_id")
+    await safe_create_index(augmentation_runs_col, [("job_id", 1), ("created_at", -1)])
+    await safe_create_index(augmentation_runs_col, "status")
+    await safe_create_index(augmentation_runs_col, "mode")
 
     # api_keys collection
-    await api_keys_col.create_index("user_id")
+    await safe_create_index(api_keys_col, "user_id")
 
     await backfill_pair_hashes()
 

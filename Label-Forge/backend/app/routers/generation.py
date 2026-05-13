@@ -215,6 +215,7 @@ async def get_results(
     include_discarded: bool = False,
     approved: Optional[bool] = None,
     source: Optional[str] = None,
+    augmentation_job_id: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
     await get_owned_job(job_id, user)
@@ -226,6 +227,8 @@ async def get_results(
         query["approved"] = approved
     if source:
         query["source"] = source
+    if augmentation_job_id:
+        query["augmentation_job_id"] = augmentation_job_id
 
     cursor = results_col.find(query)
     results = await cursor.to_list(length=None)

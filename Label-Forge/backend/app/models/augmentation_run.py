@@ -3,7 +3,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
-AugmentationRunStatus = Literal["running", "completed", "partial", "failed"]
+AugmentationRunStatus = Literal["running", "completed", "partial", "failed", "rolled_back"]
 
 
 class AugmentationRun(BaseModel):
@@ -15,7 +15,9 @@ class AugmentationRun(BaseModel):
     mode2_quota: int = Field(..., ge=0)
     mode1_generated: int = Field(default=0, ge=0)
     mode2_generated: int = Field(default=0, ge=0)
+    cycle_number: int = Field(default=1, ge=1)
     status: AugmentationRunStatus
     shortfall_message: Optional[str] = None
+    noise_report: Optional[dict] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
